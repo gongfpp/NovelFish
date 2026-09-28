@@ -215,7 +215,7 @@
       var offConv = api.on('conv', refreshHistory);
 
       rebuild(false);
-      api.toast('小说在「已深度思考」里 · Esc 一键收起');
+      if (api.firstRun('novel-hint')) api.toast('小说在「已深度思考」里 · Esc 一键收起');
 
       CLEANUP = [function () {
         root.removeEventListener('click', onRootClick);

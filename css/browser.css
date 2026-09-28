@@ -14,6 +14,8 @@
   background: #fff;
   overflow: hidden;
   position: relative;
+  /* 标签栏 40px + 工具栏 40px：内容区从这里开始，浮层（页内查找）据此定位 */
+  --chrome-head-h: 80px;
 }
 
 /* 只在对应平台出现的元素 */
@@ -326,6 +328,7 @@
 /* 真全屏 */
 .app.is-fs .chrome-tabbar,
 .app.is-fs .chrome-toolbar { display: none; }
+.app.is-fs .chrome { --chrome-head-h: 0px; }
 
 /* ---------------- Windows 平台微调 ---------------- */
 /* Win11 的标签页顶部圆角更大，分隔线更淡 */
@@ -592,10 +595,130 @@ button.ext-icon { border: 0; background: transparent; padding: 0; }
 .pop-profile-sync svg { display: block; color: #1e8e3e; }
 .pop-profile-btns { display: flex; gap: 8px; padding: 0 16px 10px; }
 
+/* 资料头像：换成自定义图片后吃掉圆形区域 */
+.chrome-avatar.has-img,
+.pop-profile-avatar.has-img {
+  overflow: hidden;
+  background: transparent !important;
+}
+.chrome-avatar img,
+.pop-profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ============================================================
+   缩放的二级菜单（主菜单 → 缩放）
+   真 Chrome 的二级菜单从主菜单左侧飞出来，纵向对齐被点的那一行。
+   ============================================================ */
+.pop-flyout {
+  right: 280px;
+  width: 176px;
+  padding: 6px 0;
+  animation: none;
+}
+.pop-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 6px;
+}
+.pop-zoom-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #444746;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  font-family: var(--font-ui);
+}
+.pop-zoom-btn:hover { background: #f1f3f4; }
+.pop-zoom-val {
+  font-size: 12.5px;
+  color: #202124;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: center;
+}
+.pop-zoom-full {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 14px;
+  cursor: default;
+  font-size: 12.5px;
+}
+.pop-zoom-full:hover { background: #f1f3f4; }
+.pop-zoom-full .pop-key { margin-left: auto; }
+
+/* ============================================================
+   页内查找条（⌘F / 主菜单「查找…」）
+   贴在内容区右上角，和真 Chrome 同位置同尺寸。
+   ============================================================ */
+.chrome-find {
+  position: absolute;
+  top: calc(var(--chrome-head-h) + 8px);   /* 贴在内容区右上角，不压地址栏 */
+  right: 16px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 8px 0 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .16), 0 6px 20px rgba(0, 0, 0, .16);
+  font-family: var(--font-ui);
+  animation: findIn .12s ease;
+}
+@keyframes findIn { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: none } }
+.chrome-find[hidden] { display: none; }
+.find-input {
+  width: 168px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: #202124;
+}
+.find-input::placeholder { color: #80868b; }
+.find-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #5f6368;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+  min-width: 34px;
+  text-align: right;
+}
+.find-count.is-empty { color: #c5221f; }
+.find-btn {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #444746;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  font-family: var(--font-ui);
+}
+.find-btn:hover { background: #f1f3f4; }
+
 @media (max-width: 720px) {
   .chrome-extra { display: none; }
   .chrome-tab { min-width: 0; }
   .pop-ext { right: 4px; width: min(336px, calc(100vw - 16px)); }
   .pop-avatar { right: 4px; width: min(306px, calc(100vw - 16px)); }
   .pop-site { left: 4px; width: min(340px, calc(100vw - 16px)); }
+  .pop-flyout { right: 8px; }
+  .chrome-find { right: 8px; }
+  .find-input { width: 110px; }
 }

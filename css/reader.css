@@ -10,8 +10,8 @@
 /* ---------------- 小说正文（挂在「深度思考」容器里） ---------------- */
 .nf-sec {
   font-size: var(--nf-font, 14px);
-  line-height: var(--nf-line, 1.9);
-  max-width: var(--nf-width, 780px);
+  line-height: var(--nf-line, 1.7);
+  max-width: var(--nf-width, 840px);
 }
 
 .nf-ch {

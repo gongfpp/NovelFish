@@ -1,612 +1,912 @@
 /* ============================================================
-   skins/deepseek.css — 伪装成浏览器打开 chat.deepseek.com
-   结构：.ds > .ds-side（会话列表） + .ds-main（顶栏 / 对话 / 输入框）
+   skins/deepseek.css — chat.deepseek.com 的 1:1 还原
 
-   正文位置：「深度思考」折叠框（.ds-think-body 里的 .nf-sec）
-   伪装位置：提问气泡 + 回答正文
-   正文与富文本排版见 css/reader.css（跨皮肤共享，本文件不重复定义）
+   下面所有数值都取自官网线上样式包
+   （https://fe-static.deepseek.com/chat/static/main.<hash>.css）里
+   的设计令牌与组件规则，不是凭印象画的：
+
+     · 语义色      --dsw-alias-*            → --ds-*
+     · 静态色板    --dsw-static-*           → 直接写十六进制
+     · 组件尺寸    --ds-control-height-*    → 44 / 40 / 36 / 32 / 28
+     · 侧栏宽度    --sider-width: 261px
+     · 消息列      --message-list-max-width: 840px / padding: 44px
+     · 能力开关    .ds-toggle-button        34px 高 / radius 18px / 13px 500
+     · 用户气泡    .fbb737a4                radius 22px / padding 10px 16px
+     · 助手消息    ._4f9bf79                margin-bottom: 16px
+     · 操作条      ._965abe9                默认 opacity:0，悬停才出现
+     · 弹窗        .ds-modal-content        width 525px / radius 24px / padding 22px 24px
+     · 思考内容    .ds-think-content        14px/24px + #61666b
+     · 输入框      ._77cefa5                radius 24px / 1px rgba(0,0,0,.1) / 白底
+     · 文本框      ._27c9245                padding 12px 12px 0 16px / min-height 60px
+     · 工具行      .ec4f5d61                padding 12px（外套 ._020ab5b margin-top 4px）
+     · 上传 / 发送                          34×34 圆形；发送 = brand 填充，未就绪 40% 透明
+     · 底部渐变    --dsw-linear-gradient-think
+
+   本文件不承载正文排版（.nf-*）与富文本（.rt-*），
+   那些在 css/reader.css 里，由所有皮肤共享。
    ============================================================ */
 
 .ds {
-  --ds-blue: #4d6bfe;
-  --ds-blue-weak: #eef2ff;
-  --ds-text: #1a1a1a;
-  --ds-text-2: #5a5f66;
-  --ds-text-3: #9aa0a6;
-  --ds-side-bg: #f9f9fa;
-  --ds-hover: #ececef;
-  --ds-bubble: #eff3f9;
+  /* ---- 语义色（浅色主题，逐条对应官网 body{} 的 --dsw-alias-*） ---- */
+  --ds-bg: #fff;                       /* alias-bg-base / bg-layer-* */
+  --ds-label-1: #0f1115;               /* alias-label-primary   neutral-bluish-1000 */
+  --ds-label-2: #61666b;               /* alias-label-secondary neutral-bluish-700 */
+  --ds-label-3: #81858c;               /* alias-label-tertiary  neutral-bluish-600 */
+  --ds-label-4: #adb2b8;               /* alias-label-caption   neutral-bluish-400 */
+  --ds-border-1: rgba(0, 0, 0, .04);   /* alias-border-l1 */
+  --ds-border-2: rgba(0, 0, 0, .1);    /* alias-border-l2 */
+  --ds-border-3: rgba(0, 0, 0, .12);   /* alias-border-l3 */
+  --ds-border-4: rgba(0, 0, 0, .16);   /* alias-border-l4 */
+
+  /* 品牌色：brand-primary = deepseek-500 */
+  --ds-brand: #3964fe;
+  --ds-brand-hover: #5686fe;           /* deepseek-450 */
+  --ds-brand-400: #679efe;
+  --ds-brand-300: #b7c8fe;             /* ghost-active-border */
+  --ds-brand-100: #e4edfd;             /* ghost-active-hover */
+  --ds-brand-50: #edf3fe;              /* ghost-active-fill */
+
+  --ds-hover: rgba(38, 49, 72, .06);   /* alias-interactive-bg-hover */
+  --ds-hover-strong: rgba(38, 49, 72, .14);
+
+  --ds-sidebar: #f9fafb;               /* specific-sidebar-fill  bluish-50 */
+  --ds-nav-hover: #f1f3f5;             /* sidebar-nav-item-hover  bluish-75 */
+  --ds-nav-active: #ebeef2;            /* sidebar-nav-item-active bluish-100 */
+  --ds-selector: #f1f3f5;              /* specific-selector       bluish-75 */
+  --ds-tip: #f5f6f7;                   /* specific-tip            bluish-60 */
+  --ds-plate: #f5f6f7;                 /* alias-bg-multi-select   bluish-60（悬停底板） */
+  --ds-input-bg: #fff;                 /* specific-input-major    bluish-00 */
+
+  --ds-bubble: #edf3fe;                /* specific-bubble  deepseek-50 */
+  --ds-bubble-hl: #d3e2ff;             /* bubble-highlight deepseek-200 */
+
+  --ds-code-block: #f9fafb;            /* alias-markdown-code-block  bluish-50 */
+  --ds-code-inline: #ebeef2;            /* alias-markdown-inline-code bluish-100 */
+
+  /* ---- 三档阴影，原样照抄 ---- */
+  --ds-shadow-1: 0 2px 4px 0 rgba(0, 0, 0, .05);
+  --ds-shadow-2: 0 4px 12px 0 rgba(0, 0, 0, .02), 0 2px 8px 0 rgba(0, 0, 0, .04);
+  --ds-shadow-3: 0 0 1px 0 rgba(0, 0, 0, .2), 0 0 4px 0 rgba(0, 0, 0, .02),
+                 0 12px 32px 0 rgba(0, 0, 0, .08);
+
+  /* ---- 吸顶思考栏下方的柔化渐变（官网同名变量） ---- */
+  --ds-think-fade: linear-gradient(180deg, #fff 20.19%, rgba(255, 255, 255, 0) 100%);
+  --ds-ease: cubic-bezier(.4, 0, .2, 1);
+
+  /* ---- 尺寸 ---- */
+  --ds-sider-w: 261px;
+  --ds-pad-h: 44px;
+  --ds-max-w: 840px;
+  --ds-ctl-l: 40px;
+  --ds-ctl-m: 36px;
+  --ds-ctl-s: 32px;
 
   height: 100%;
   display: flex;
-  position: relative;
-  background: #fff;
-  color: var(--ds-text);
-  font-family: var(--font-ui);
-  font-size: 14px;
+  background: var(--ds-bg);
+  color: var(--ds-label-1);
+  font-family: "quote-cjk-patch", "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+               "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 28px;
   overflow: hidden;
 }
 
+.ds button { font-family: inherit; }
+
 /* ============================================================
-   侧边栏：会话列表
+   侧边栏 —— 宽 261px，底色 #f9fafb
    ============================================================ */
 .ds-side {
-  width: 262px;
-  flex: 0 0 262px;
-  background: var(--ds-side-bg);
-  border-right: 1px solid #ededf0;
+  width: var(--ds-sider-w);
+  flex: 0 0 var(--ds-sider-w);
+  background: var(--ds-sidebar);
+  border-right: 1px solid var(--ds-border-1);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  transition: margin-left .22s cubic-bezier(.22, .8, .3, 1);
+  transition: margin-left .2s var(--ds-ease);
 }
-.ds[data-side="closed"] .ds-side { margin-left: -262px; }
+.ds[data-side="closed"] .ds-side { margin-left: calc(-1 * var(--ds-sider-w)); }
 
 .ds-side-head {
-  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 56px;
+  padding: 0 12px 0 16px;
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 14px;
 }
-.ds-logo {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1;
-  min-width: 0;
-}
-.ds-logo-mark, .ds-logo-mark svg { width: 22px; height: 22px; display: block; flex: 0 0 auto; }
-.ds-logo-text {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: .2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ds-side-icon {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  border: 0;
-  background: transparent;
-  border-radius: 7px;
-  color: var(--ds-text-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-}
-.ds-side-icon:hover { background: var(--ds-hover); color: var(--ds-text); }
+.ds-logo { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ds-logo-mark { width: 24px; height: 24px; display: block; flex: 0 0 auto; }
+.ds-logo-mark svg { display: block; width: 24px; height: 24px; }
+.ds-logo-text { font-size: 16px; font-weight: 600; letter-spacing: -.2px; color: var(--ds-label-1); }
 
 .ds-side-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px;
+  overflow: hidden;
 }
 
-.ds-newchat {
+/* 新对话 / 搜索 两颗胶囊按钮：官网 ._5a8ac7a（radius 100px、高 40px、padding 0 16px） */
+.ds-newchat,
+.ds-searchbtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  height: 38px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--ds-blue);
-  color: #fff;
-  font-size: 13.5px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
+  height: var(--ds-ctl-l);
+  flex: 0 0 auto;
+  padding: 0 16px;
+  border: 1px solid var(--ds-border-1);
+  border-radius: 100px;
+  background: #fff;
+  color: var(--ds-label-1);
+  font-size: 14px;
+  line-height: 22px;
   cursor: pointer;
-  transition: background .15s;
-  margin-bottom: 10px;
+  transition: box-shadow .2s, background .2s;
 }
-.ds-newchat:hover { background: #3f5cf0; }
-.ds-newchat:active { background: #3652e0; }
-.ds-newchat svg { width: 15px; height: 15px; }
+.ds-newchat { margin-bottom: 8px; }
+.ds-searchbtn { margin-bottom: 12px; position: relative; }
+.ds-newchat:hover,
+.ds-searchbtn:hover {
+  background: #fff;
+  box-shadow: 0 4px 4px rgba(72, 104, 178, .04), 0 -3px 4px rgba(72, 104, 178, .04),
+              0 6px 6px rgba(106, 111, 117, .1);
+}
+.ds-newchat svg, .ds-searchbtn svg { display: block; flex: 0 0 auto; color: var(--ds-label-2); }
+.ds-newchat svg { color: var(--ds-label-1); }
 
-.ds-search {
-  height: 34px;
-  border-radius: 9px;
-  background: #f1f2f4;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  color: var(--ds-text-3);
-  margin-bottom: 6px;
-  transition: background .15s, box-shadow .15s;
+/* 官网搜索按钮悬停时在右侧浮现 ⌘ J 提示 */
+.ds-search-kbd {
+  margin-left: auto;
+  color: var(--ds-label-4);
+  font-size: 14px;
+  line-height: 22px;
+  opacity: 0;
+  transition: opacity .3s;
 }
-.ds-search:focus-within { background: #fff; box-shadow: inset 0 0 0 1px #d9dce3; }
-.ds-search svg { flex: 0 0 auto; }
+.ds-searchbtn:hover .ds-search-kbd { opacity: 1; }
+.ds-searchbtn.is-hidden { display: none; }
+
+/* 搜索态：输入框取代按钮 */
+.ds-search {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  height: var(--ds-ctl-l);
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+  padding: 0 14px;
+  border: 1px solid var(--ds-border-2);
+  border-radius: 100px;
+  background: #fff;
+}
+.ds-search.is-open { display: flex; }
+.ds-search svg { display: block; flex: 0 0 auto; color: var(--ds-label-3); }
 .ds-search input {
   flex: 1;
   min-width: 0;
   border: 0;
   outline: none;
   background: transparent;
-  font-size: 13px;
-  color: var(--ds-text);
+  color: var(--ds-label-1);
+  font-size: 14px;
+  line-height: 22px;
+  padding: 0;
 }
-.ds-search input::placeholder { color: var(--ds-text-3); }
+.ds-search input::placeholder { color: var(--ds-label-4); }
 .ds-search-clear {
   border: 0;
   background: transparent;
-  color: var(--ds-text-3);
-  cursor: pointer;
-  padding: 0 2px;
-  font-size: 13px;
-  line-height: 1;
-  display: none;
-}
-.ds-search.has-value .ds-search-clear { display: block; }
-
-.ds-hist-group { margin-bottom: 2px; }
-.ds-hist-label {
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--ds-label-3);
   font-size: 12px;
-  color: #a8adb4;
-  padding: 12px 10px 5px;
-  font-weight: 500;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.ds-search-clear:hover { background: var(--ds-hover); color: var(--ds-label-1); }
+
+/* ---- 会话列表 ---- */
+.ds-hist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  margin: 0 -4px;
+}
+.ds-hist-group { margin-bottom: 12px; }
+.ds-hist-label {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--ds-label-4);
 }
 .ds-hist-item {
-  height: 34px;
+  height: var(--ds-ctl-m);
   display: flex;
   align-items: center;
-  border-radius: 8px;
   padding: 0 10px;
-  font-size: 13px;
-  color: #3f434a;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ds-label-1);
   cursor: pointer;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: background .12s;
+  transition: background .15s;
 }
-.ds-hist-item:hover { background: var(--ds-hover); }
-.ds-hist-item.is-active { background: #e5e6ea; color: var(--ds-text); font-weight: 500; }
+.ds-hist-item:hover { background: var(--ds-nav-hover); }
+.ds-hist-item.is-active { background: var(--ds-nav-active); }
 .ds-hist-empty {
-  font-size: 12.5px;
-  color: var(--ds-text-3);
-  padding: 16px 10px;
+  padding: 16px 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ds-label-4);
   text-align: center;
 }
 
-.ds-side-foot {
-  flex: 0 0 auto;
-  padding: 8px 10px 10px;
-  border-top: 1px solid #ededf0;
-}
-.ds-user {
-  width: 100%;
-  height: 42px;
-  border: 0;
-  background: transparent;
-  border-radius: 10px;
+/* ---- 侧栏底部：账户行（官网这里是头像 + 名称 + 菜单） ---- */
+.ds-side-foot { flex: 0 0 auto; padding: 8px 12px 12px; position: relative; }
+.ds-account {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 8px;
+  gap: 10px;
+  width: 100%;
+  height: var(--ds-ctl-l);
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
   cursor: pointer;
-  font-size: 13.5px;
-  color: var(--ds-text);
   text-align: left;
 }
-.ds-user:hover { background: var(--ds-hover); }
-.ds-avatar {
-  width: 26px;
-  height: 26px;
+.ds-account:hover { background: var(--ds-nav-hover); }
+.ds-account-avatar {
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: linear-gradient(140deg, #6a8bff, #4d6bfe);
+  background: var(--ds-brand);
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
-.ds-user-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ds-user svg { color: var(--ds-text-3); flex: 0 0 auto; }
+.ds-account-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ds-account-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ds-label-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-account-more { color: var(--ds-label-3); display: flex; flex: 0 0 auto; }
+
+.ds-account-menu {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 58px;
+  z-index: 30;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: var(--ds-shadow-3);
+  padding: 6px;
+  animation: ds-pop .12s ease;
+}
+.ds-account-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--ds-ctl-m);
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ds-label-1);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  text-align: left;
+}
+.ds-account-menu button:hover { background: var(--ds-nav-hover); }
+.ds-account-menu .ds-menu-sep { height: 1px; background: var(--ds-border-1); margin: 5px 0; }
 
 /* ============================================================
    主区
    ============================================================ */
-.ds-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+.ds-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* ---------------- 顶栏 ---------------- */
 .ds-top {
-  height: 52px;
   flex: 0 0 auto;
+  height: 56px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 14px;
+  gap: 10px;
+  padding: 0 20px;
 }
 .ds-top-title {
-  font-size: 13.5px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  line-height: 28px;
   font-weight: 500;
-  margin-left: 2px;
+  color: var(--ds-label-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ds-top-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 
-.ds-ghost-btn {
-  height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ds-text-2);
-  font-size: 13px;
-  cursor: pointer;
-}
-.ds-ghost-btn:hover { background: #f2f3f5; color: var(--ds-text); }
-
+/* 通用图标按钮：32px 圆形，悬停底色 */
 .ds-icon-btn {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ds-text-2);
-  cursor: pointer;
-  font-size: 17px;
-  line-height: 1;
+  width: var(--ds-ctl-s);
+  height: var(--ds-ctl-s);
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ds-label-2);
+  cursor: pointer;
+  transition: background .15s, color .15s;
 }
-.ds-icon-btn:hover { background: #f2f3f5; color: var(--ds-text); }
-
-/* 侧边栏收起后，顶栏左侧才出现展开按钮（和官网一致） */
+.ds-icon-btn:hover { background: var(--ds-hover); color: var(--ds-label-1); }
+.ds-icon-btn svg { display: block; }
 .ds-open-side { display: none; }
 .ds[data-side="closed"] .ds-open-side { display: flex; }
 
-/* ---------------- 对话区 ---------------- */
-.ds-stage {
-  flex: 1;
-  min-height: 0;
+/* 顶栏「分享」：官网是文字胶囊按钮 */
+.ds-share-btn {
   display: flex;
-  flex-direction: column;
-  position: relative;
+  align-items: center;
+  gap: 6px;
+  height: var(--ds-ctl-s);
+  padding: 0 12px;
+  border: 1px solid var(--ds-border-2);
+  border-radius: 100px;
+  background: #fff;
+  color: var(--ds-label-1);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background .2s, border .2s;
 }
+.ds-share-btn:hover { background: var(--ds-hover); }
+.ds-share-btn svg { display: block; color: var(--ds-label-2); }
 
+/* ---- 舞台 ---- */
+.ds-stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+
+/* 消息区：左右 44px 内边距，内容列最大 840px 居中。
+   顶部留白放在内层，这样吸顶表头的 top:0 正好落在滚动口上沿，
+   冻结条上方不会露出一条正文。 */
 .ds-thread {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 0 var(--ds-pad-h) 24px;
 }
-.ds-thread-inner {
-  max-width: 812px;
-  margin: 0 auto;
-  padding: 0 24px 20px;
-}
-
-/* ---------- 置顶折叠条：老板键手感的核心 ---------- */
-.ds-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0 12px;
-  /* 用渐变而不是实心底，滚上去的消息不会被一刀切断 */
-  background: linear-gradient(180deg, #fff 74%, rgba(255, 255, 255, 0));
-}
-
-.ds-think-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 11px 0 10px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: #f4f5f7;
-  font-size: 13px;
-  color: #4a4f57;
-  cursor: pointer;
-  max-width: 100%;
-  transition: background .15s, color .15s, border-color .15s;
-}
-.ds-think-toggle:hover { background: #eceef1; }
-.ds-think-toggle[data-open="1"] {
-  background: var(--ds-blue-weak);
-  border-color: #dde5ff;
-  color: var(--ds-blue);
-}
-.ds-think-toggle .ds-think-icon { flex: 0 0 auto; opacity: .9; }
-.ds-think-toggle .ds-think-label { font-weight: 500; }
-.ds-think-toggle .ds-think-meta {
-  font-size: 12.5px;
-  color: var(--ds-text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ds-think-toggle[data-open="1"] .ds-think-meta { color: #8fa3e8; }
-.ds-think-toggle .ds-chev { flex: 0 0 auto; transition: transform .2s; }
-.ds-think-toggle[data-open="0"] .ds-chev { transform: rotate(-90deg); }
-
-.ds-fold-all {
-  margin-left: auto;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: #f4f5f7;
-  font-size: 13px;
-  color: #4a4f57;
-  cursor: pointer;
-  transition: background .15s, color .15s, border-color .15s;
-}
-.ds-fold-all:hover { background: #eceef1; }
-.ds-fold-all[data-on="1"] {
-  background: var(--ds-blue-weak);
-  border-color: #dde5ff;
-  color: var(--ds-blue);
-}
-.ds-fold-all svg { flex: 0 0 auto; }
-
-/* ---------- 欢迎页（新对话时） ---------- */
-.ds-welcome { display: none; }
+.ds-thread-inner { max-width: var(--ds-max-w); margin: 0 auto; padding-top: 8px; }
 .ds-stage.is-welcome .ds-thread { display: none; }
-.ds-stage.is-welcome .ds-welcome {
+
+/* ---- 欢迎页 ---- */
+.ds-welcome {
+  display: none;
   flex: 1;
-  min-height: 0;
-  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 0 24px 60px;
+  padding: 0 40px 80px;
+  text-align: center;
 }
-.ds-welcome-title { font-size: 26px; font-weight: 600; letter-spacing: .4px; }
-.ds-welcome-sub { font-size: 14px; color: var(--ds-text-3); }
-
-/* ---------- 消息 ---------- */
-.ds-msg { margin: 6px 0; }
-
-.ds-user-msg {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 0 2px;
-}
-.ds-bubble {
-  max-width: 76%;
-  background: var(--ds-bubble);
-  border-radius: 14px;
-  padding: 10px 14px;
-  font-size: 15px;
-  line-height: 1.72;
-  color: #1c1e21;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.ds-ai-msg { display: flex; gap: 12px; padding: 8px 0 4px; }
-.ds-ai-avatar {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  margin-top: 2px;
-  border-radius: 50%;
-  background: var(--ds-blue);
+.ds-stage.is-welcome .ds-welcome { display: flex; }
+/* 官网 ._5758a85 ._6c7e7df：一行 flex，鲸鱼 34×25 与标题同行 */
+.ds-welcome-title {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 21px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--ds-label-1);
 }
-.ds-ai-avatar svg { width: 18px; height: 18px; display: block; }
-.ds-ai-body { flex: 1; min-width: 0; }
-
-/* 深度思考折叠框 */
-.ds-think {
-  border-radius: 12px;
-  background: #f7f8fa;
-  border: 1px solid #eef0f3;
-  margin-bottom: 12px;
+.ds-welcome-mark { display: flex; flex: 0 0 auto; }
+.ds-welcome-mark svg { display: block; width: 34px; height: 25px; }
+/* 官网 ._5758a85 ._5d11eb6：12px/18px 三级色，单行省略 */
+.ds-welcome-sub {
+  max-width: 100%;
+  margin: 4px auto 21px;
+  color: var(--ds-label-3);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+/* ============================================================
+   消息
+   ============================================================ */
+.ds-msg { display: flex; flex-direction: column; }
+
+/* 用户：右对齐气泡，官网 .fbb737a4
+   radius 22px / padding 10px 16px / 16px-24px / max-width calc(100% - 88px) */
+.ds-user-msg { align-items: flex-end; margin-bottom: 16px; }
+.ds-bubble {
+  max-width: calc(100% - 88px);
+  padding: 10px 16px;
+  border-radius: 22px;
+  background: var(--ds-bubble);
+  color: var(--ds-label-1);
+  font-size: 16px;
+  line-height: 24px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: background .3s;
+}
+
+/* 助手：官网 ._4f9bf79 —— margin-bottom 16px */
+.ds-ai-msg { margin-bottom: 16px; }
+.ds-ai-msg:last-child { margin-bottom: 8px; }
+
+/* 悬停底板：官网 ._4f9bf79:not(._448e4c0):before
+   —— 比消息宽 32px（左右各 16px）、上探 12px、下方留出 38px 操作条，
+      radius 12px，底色 alias-bg-multi-select（bluish-60 #f5f6f7） */
+.ds-ai-msg { position: relative; }
+.ds-ai-msg::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 25px);
+  width: calc(100% + 32px);
+  height: calc(100% - 26px);
+  transform: translate(-50%, -50%);
+  background: var(--ds-plate);
+  border-radius: 12px;
+  opacity: 0;
+  transition: opacity .3s;
+  pointer-events: none;
+  z-index: -1;
+}
+.ds-ai-msg:hover::before { opacity: 1; }
+/* 冻结表头是不透明的，悬停时跟着底板一起变色，免得中间横一条白 */
+.ds-ai-msg:hover .ds-think-head { --ds-think-head-bg: var(--ds-plate); }
+
+/* ---- 深度思考：表头吸顶冻结，正文在下方滚动 ---- */
+.ds-think { position: relative; }
 .ds-think-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   width: 100%;
-  border: 0;
-  background: transparent;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 12px;
-  font-size: 13.5px;
-  color: var(--ds-text-2);
-  cursor: pointer;
+  gap: 6px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--ds-think-head-bg, var(--ds-bg));
+  color: var(--ds-label-3);
+  font-size: 14px;
+  line-height: 24px;
   text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: color .15s, background .3s;
 }
-.ds-think-head:hover { color: var(--ds-text); }
-.ds-think-head .ds-think-icon { flex: 0 0 auto; opacity: .85; }
-.ds-think-head .ds-think-label { font-weight: 500; }
-.ds-think-head .ds-think-meta { font-size: 12.5px; color: var(--ds-text-3); }
-.ds-think-head .ds-chev { margin-left: auto; flex: 0 0 auto; transition: transform .2s; }
-.ds-think[data-open="0"] .ds-chev { transform: rotate(-90deg); }
+.ds-think-head:hover { color: var(--ds-label-1); }
+/* 官网 --dsw-linear-gradient-think：吸顶条下方柔化，正文滚过去不会硬切 */
+.ds-think-head::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 16px;
+  background: var(--ds-think-fade);
+  pointer-events: none;
+}
+.ds-think-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-chev { flex: 0 0 auto; transition: transform .2s; color: currentColor; }
+.ds-think[data-open="0"] .ds-think-head .ds-chev { transform: rotate(-90deg); }
+
+/* 思考正文：官网 .ds-think-content —— 14px/24px、次要色 */
+.ds-think-body {
+  padding: 0 0 4px;
+  color: var(--ds-label-2);
+  font-size: 14px;
+  line-height: 24px;
+}
 .ds-think[data-open="0"] .ds-think-body { display: none; }
 
-.ds-think-body {
-  padding: 14px 16px 16px;
-  border-top: 1px solid #eef0f3;
-  color: #43474e;
+/* 思考框里的正文：字号 / 行距 / 栏宽交给阅读参数驱动，
+   默认值（14px / 1.7 / 840px）正好等于官网 .ds-think-content 的 14px-24px 规格 */
+.ds-think-body .nf-sec {
+  font-size: var(--nf-font, 14px);
+  line-height: var(--nf-line, 1.7);
+  max-width: var(--nf-width, 840px);
+  color: var(--ds-label-2);
 }
+.ds-think-body .nf-ch { font-weight: 600; border-left-color: var(--ds-brand-300); opacity: 1; }
+.ds-think-body .rt-pre { background: var(--ds-code-block); border-color: var(--ds-border-1); }
+.ds-think-body .rt-code { background: var(--ds-code-inline); }
 
-/* 回答正文（.rt-* 富文本样式来自 css/reader.css） */
-.ds-answer {
-  font-size: 15px;
-  line-height: 1.78;
-  color: #1f2024;
-  word-break: break-word;
-}
-.ds-answer p { margin: 0 0 .65em; }
-.ds-answer p:last-child { margin-bottom: 0; }
-.ds-answer strong { font-weight: 600; }
+/* ---- 回答正文：官网 markdown 规格 16px/28px ---- */
+.ds-markdown { color: var(--ds-label-1); font-size: 16px; line-height: 28px; }
+.ds-markdown > *:first-child { margin-top: 0; }
+.ds-markdown > *:last-child { margin-bottom: 0; }
+.ds-markdown h1 { font-size: 24px; line-height: 34px; font-weight: 700; margin: 20px 0 12px; }
+.ds-markdown h2 { font-size: 22px; line-height: 32px; font-weight: 700; margin: 18px 0 12px; }
+.ds-markdown h3 { font-size: 20px; line-height: 30px; font-weight: 700; margin: 16px 0 12px; }
+.ds-markdown h4 { font-size: 16px; line-height: 28px; font-weight: 600; margin: 14px 0 10px; }
+.ds-markdown p { margin: 0 0 12px; }
+.ds-markdown ul, .ds-markdown ol { margin: 12px 0; padding-left: 1.4em; }
+.ds-markdown li { margin: 4px 0; }
 
+.ds-answer { padding-bottom: 6px; }
+
+/* ---- 操作条：官网 ._965abe9 默认透明，悬停 / 聚焦才出现 ---- */
 .ds-msg-actions {
   display: flex;
+  align-items: center;
   gap: 2px;
-  margin-top: 8px;
+  height: 32px;
+  margin-top: 2px;
   opacity: 0;
-  transition: opacity .15s;
+  transition: opacity .2s var(--ds-ease);
 }
-.ds-ai-msg:hover .ds-msg-actions { opacity: 1; }
+.ds-msg:hover .ds-msg-actions,
+.ds-msg:focus-within .ds-msg-actions { opacity: 1; }
+.ds-user-msg .ds-msg-actions { justify-content: flex-end; }
 .ds-act {
-  width: 28px;
-  height: 28px;
-  border: 0;
-  background: transparent;
-  border-radius: 7px;
-  color: var(--ds-text-3);
-  cursor: pointer;
+  width: var(--ds-ctl-s);
+  height: var(--ds-ctl-s);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: background .12s, color .12s;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ds-label-3);
+  cursor: pointer;
+  transition: background .15s, color .15s;
 }
-.ds-act:hover { background: #f2f3f5; color: var(--ds-text-2); }
-.ds-act.is-hit { color: var(--ds-blue); background: var(--ds-blue-weak); }
+.ds-act:hover { background: var(--ds-hover); color: var(--ds-label-1); }
+.ds-act svg { display: block; }
+.ds-act.is-on { color: var(--ds-brand); }
+.ds-act.is-hit { background: var(--ds-nav-active); }
 
-/* ---------- 净读模式：一键折叠对话双方正文 ---------- */
-.ds-thread[data-readonly="1"] .ds-answer { display: none; }
-.ds-thread[data-readonly="1"] .ds-user-msg .ds-bubble {
-  max-height: 44px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
-}
-.ds-thread[data-readonly="1"] .ds-think { margin-bottom: 10px; }
+/* ============================================================
+   输入区 —— 逐条对齐官网 ._77cefa5（inputWrapper）
+   ------------------------------------------------------------
+   官网结构（JS 打包里的同名类，见 55481 模块）：
 
-/* ---------- 输入框 ---------- */
-.ds-composer {
-  flex: 0 0 auto;
-  padding: 6px 24px 10px;
-  background: #fff;
-}
+     aaff8b8f  inputFullContainer   flex-grow:1; width:100%
+     _77cefa5  inputWrapper         圆角 24px / 1px 边框 / 白底 / overflow:hidden
+     _27c9245  textarea             内边距 12px 12px 0 16px，min-height 60px
+     _020ab5b  belowInputWrapper    工具行上方 4px
+     ec4f5d61  functionRow          工具行，padding 12px
+     _58b31c9  functionRowLeft      能力开关，flex:auto
+     bf38813a  functionRowRight     上传 / 发送，margin-left:auto
+     52158     _52c986b / bd74640a  发送按钮，theme.height=34px，未就绪 opacity:.4
+
+   两种阴影是「按页面状态」而不是「按 focus」切换的：
+     会话中            _3d616d3 / e0f12fee
+     新会话首页、agent  _974d5d0 / _9996a53
+   ============================================================ */
+.ds-composer { flex: 0 0 auto; padding: 0 var(--ds-pad-h) 20px; }
+
 .ds-box {
-  max-width: 812px;
-  margin: 0 auto;
-  border: 1px solid #e4e6ea;
-  border-radius: 20px;
-  padding: 10px 12px 8px;
-  background: #fff;
-  transition: border-color .16s, box-shadow .16s;
-}
-.ds-box:focus-within {
-  border-color: #c9d3f8;
-  box-shadow: 0 0 0 3px rgba(77, 107, 254, .08);
-}
-.ds-input {
+  box-sizing: border-box;              /* 官网 ._77cefa5 */
   width: 100%;
-  display: block;
+  max-width: var(--ds-max-w);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--ds-border-2);   /* alias-border-l2-darkmode-thin */
+  border-radius: 24px;
+  background: var(--ds-input-bg);
+  color: var(--ds-label-1);
+  font-size: 16px;                       /* font-size:inherit 的来源 */
+  line-height: 24px;                     /* --line-height:24px */
+  cursor: text;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .02), 0 2px 4px rgba(0, 0, 0, .04);
+  transition: box-shadow .2s var(--ds-ease);
+}
+/* 新会话首页：官网把那圈大范围柔光只给「无会话 / agent」两种状态 */
+.ds-stage.is-welcome .ds-box {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .02),
+              0 2px 2px rgba(72, 104, 178, .01),
+              0 30px 60px rgba(72, 104, 178, .03);
+}
+
+.ds-input {
+  display: block;                        /* 官网 ._77cefa5 ._27c9245 */
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 12px 12px 0 16px;             /* --input-padding-top 12px */
+  min-height: 60px;                      /* calc(24px * 2 + 12px)：正好两行 */
+  max-height: 336px;
   border: 0;
   outline: none;
   resize: none;
+  overflow: auto;
   background: transparent;
-  font-size: 15px;
-  line-height: 1.6;
-  min-height: 26px;
-  max-height: 168px;
-  color: var(--ds-text);
-  padding: 2px 2px 4px;
+  color: var(--ds-label-1);
+  caret-color: var(--ds-brand);          /* alias-brand-text */
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-variant-ligatures: no-contextual;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overscroll-behavior: contain;
 }
-.ds-input::placeholder { color: #b3b7bd; }
+.ds-input:focus { outline: none; }
+.ds-input::placeholder { color: var(--ds-label-4); user-select: none; }
 
-.ds-box-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.ds-tools { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 窄屏：官网把最小高度降到 1.25 行 */
+@media not all and (min-width: 768px) {
+  .ds-input { min-height: 42px; }
+}
 
+/* 工具行：官网 .ec4f5d61 外面还套了 ._020ab5b（margin-top:4px） */
+.ds-box-bar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px;
+  overflow: hidden;
+}
+.ds-tools { flex: auto; display: flex; align-items: center; min-width: 0; gap: 10px; }
+.ds-tools-right {
+  flex: none; display: flex; align-items: center;
+  justify-content: flex-end; margin-left: auto;
+}
+
+/* 能力开关：官网 .ds-toggle-button --m，逐条对齐 */
 .ds-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: #f4f5f7;
+  justify-content: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--ds-border-2);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--ds-label-1);
   font-size: 13px;
-  color: #4d5057;
+  line-height: 20px;
+  font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background .15s, color .15s, border-color .15s;
+  user-select: none;
+  outline: none;
+  transition: border-color .2s ease, background-color .2s ease;
 }
-.ds-chip:hover { background: #eceef1; }
+.ds-chip:hover { background: var(--ds-hover); }
+.ds-chip svg { display: block; }
 .ds-chip.is-on {
-  background: var(--ds-blue-weak);
-  border-color: #dde5ff;
-  color: var(--ds-blue);
+  background: var(--ds-brand-50);
+  border-color: var(--ds-brand-300);
+  color: var(--ds-brand);
 }
-.ds-chip svg { flex: 0 0 auto; }
+.ds-chip.is-on:hover { background: var(--ds-brand-100); }
 
-.ds-tools-right { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-
-.ds-round {
-  width: 32px;
-  height: 32px;
+/* 上传按钮：官网 tw.$ variant=icon / type=iconLabelPrimary / size=s / theme.height=34px
+   → 34×34 圆形，图标色 label-primary，悬停 interactive-bg-hover */
+.ds-attach {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #5a5f66;
+  color: var(--ds-label-1);
   cursor: pointer;
+}
+.ds-attach:hover { background: var(--ds-hover); }
+.ds-attach svg { display: block; }
+
+/* 发送按钮：官网 ._52c986b（+ .bd74640a 未就绪）
+   background = alias-button-primary-fill = brand-primary；color = bluish-00；
+   整体 40% 透明度表示不可发送，而不是换成灰色 */
+.ds-send {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: background .12s;
-}
-.ds-round:hover { background: #f2f3f5; }
-
-.ds-send {
-  width: 32px;
-  height: 32px;
   border: 0;
   border-radius: 50%;
-  background: #dfe2e8;
+  background: var(--ds-brand);
   color: #fff;
-  cursor: default;
+  cursor: not-allowed;
+  opacity: .4;
+  transition: opacity .2s, background .2s;
+}
+.ds-send[data-ready="1"] { opacity: 1; cursor: pointer; }
+.ds-send[data-ready="1"]:hover { background: var(--ds-brand-hover); }
+.ds-send svg { display: block; }
+
+.ds-disclaimer {
+  max-width: var(--ds-max-w);
+  margin: 0 auto;
+  text-align: center;
+  padding: 6px 0;                 /* 官网 ._0fcaa63 */
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ds-label-3);
+}
+
+/* ============================================================
+   分享弹窗 —— 官网 .ds-modal-content
+   525px / radius 24px / padding 22px 24px / overlay .36
+   ============================================================ */
+.ds-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  transition: background .18s, transform .12s;
 }
-.ds-send[data-ready="1"] { background: var(--ds-blue); cursor: pointer; }
-.ds-send[data-ready="1"]:hover { background: #3f5cf0; }
-.ds-send[data-ready="1"]:active { transform: scale(.94); }
-
-.ds-disclaimer {
-  max-width: 812px;
-  margin: 8px auto 0;
-  text-align: center;
-  font-size: 12px;
-  color: #b3b6bb;
+.ds-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .36);
+  animation: ds-fade .16s ease;
 }
+.ds-modal-content {
+  position: relative;
+  z-index: 1;
+  width: 525px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 24px;
+  border-radius: 24px;
+  background: var(--ds-bg);
+  box-shadow: var(--ds-shadow-3);
+  animation: ds-pop .16s ease;
+}
+@keyframes ds-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ds-pop { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 
-/* 窄屏：侧边栏改为覆盖式，不压缩对话区 */
+.ds-modal-title { font-size: 16px; line-height: 24px; font-weight: 600; margin: 0 0 6px; }
+.ds-modal-desc { font-size: 14px; line-height: 22px; color: var(--ds-label-2); margin: 0 0 16px; }
+.ds-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--ds-border-1);
+}
+.ds-modal-row-label { font-size: 14px; line-height: 22px; color: var(--ds-label-1); }
+.ds-modal-row-hint { font-size: 13px; line-height: 20px; color: var(--ds-label-3); margin-top: 2px; }
+.ds-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* 官网 .ds-switch */
+.ds-switch {
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4096px;
+  background: #d7dbe1;
+  position: relative;
+  cursor: pointer;
+  transition: background .18s;
+}
+.ds-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--ds-shadow-1);
+  transition: transform .18s;
+}
+.ds-switch[aria-checked="true"] { background: var(--ds-brand); }
+.ds-switch[aria-checked="true"] i { transform: translateX(18px); }
+
+/* 链接框 */
+.ds-linkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ds-ctl-l);
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--ds-border-2);
+  border-radius: 10px;
+  background: var(--ds-tip);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ds-label-2);
+}
+.ds-linkbox span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-linkbox button {
+  border: 0;
+  background: transparent;
+  padding: 0 8px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--ds-brand);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ds-linkbox button:hover { background: var(--ds-brand-50); }
+
+/* 通用按钮（官网 .ds-button.ds-button--l）
+   基础：40px 高 / 胶囊圆角 / 14px / 400 / padding 0 14px / min-width 72px
+   filled--primary 另加 font-weight 500 */
+.ds-btn {
+  height: var(--ds-ctl-l);          /* ds-control-height-l */
+  min-width: 72px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 4096px;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.ds-btn--primary { background: var(--ds-brand); color: #fff; font-weight: 500; }
+.ds-btn--primary:hover { background: var(--ds-brand-hover); }
+.ds-btn--ghost { background: transparent; color: var(--ds-label-1); border: 1px solid var(--ds-border-2); }
+.ds-btn--ghost:hover { background: var(--ds-hover); }
+
+/* ============================================================
+   窄屏：侧栏改成覆盖层
+   ============================================================ */
 @media (max-width: 900px) {
   .ds-side {
     position: absolute;
@@ -614,9 +914,18 @@
     top: 0;
     bottom: 0;
     z-index: 40;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, .12);
+    box-shadow: var(--ds-shadow-3);
+    margin-left: 0;
+    transform: translateX(-100%);
+    transition: transform .2s var(--ds-ease);
   }
-  .ds-thread-inner { padding-left: 14px; padding-right: 14px; }
-  .ds-composer { padding-left: 12px; padding-right: 12px; }
-  .ds-think-toggle .ds-think-meta { display: none; }
+  .ds[data-side="open"] .ds-side { transform: none; }
+  .ds[data-side="closed"] .ds-side { margin-left: 0; }
+  .ds-thread, .ds-composer { --ds-pad-h: 36px; }
+}
+
+@media (max-width: 720px) {
+  .ds-thread, .ds-composer { --ds-pad-h: 16px; }
+  .ds-bubble { max-width: calc(100% - 24px); }
+  .ds-share-btn span { display: none; }
 }

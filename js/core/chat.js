@@ -231,6 +231,43 @@
     NF.bus.emit('conv', active());
   }
 
+  /**
+   * 「重新生成」：给第 index 组问答换一条同剧本的其它回答。
+   * 只换内容，不动阅读进度（正文由阅读引擎独立提供）。
+   */
+  function rollAnswer(index) {
+    ensure();
+    var conv = active();
+    var list = seed(conv);
+    var item = list[index];
+    if (!item) return null;
+
+    var script = null;
+    NF.camouflage.raw.forEach(function (s) { if (s.id === conv.scriptId) script = s; });
+    if (!script) script = NF.camouflage.raw[0];
+    if (!script || !script.pairs || script.pairs.length < 2) return null;
+
+    var start = typeof conv.pairStart === 'number' ? conv.pairStart : 0;
+    for (var k = 1; k <= script.pairs.length; k++) {
+      var p = script.pairs[(start + k) % script.pairs.length];
+      if (p && p.a !== item.a) { item.a = p.a; break; }
+    }
+    conv.exchanges = list;
+    NF.store.save();
+    return item;
+  }
+
+  /** 点赞 / 点踩：v = 1 赞、-1 踩；再点一次取消 */
+  function vote(index, v) {
+    ensure();
+    var list = seed(active());
+    var item = list[index];
+    if (!item) return 0;
+    item.vote = item.vote === v ? 0 : v;
+    NF.store.save();
+    return item.vote;
+  }
+
   NF.chat = {
     ensure: ensure,
     groups: groups,
@@ -245,6 +282,8 @@
     append: append,
     remove: remove,
     reset: reset,
+    rollAnswer: rollAnswer,
+    vote: vote,
     /** 会话总数（控制台统计用） */
     count: function () { ensure(); return chat().convs.length; }
   };
