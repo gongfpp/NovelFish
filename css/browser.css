@@ -1,0 +1,225 @@
+/* ============================================================
+   browser.css — Chrome 浏览器窗口外框
+   默认铺满视口，模拟已最大化的 Chrome 窗口
+   ============================================================ */
+
+.chrome {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ---------------- 标签栏 ---------------- */
+.chrome-tabbar {
+  height: 40px;
+  flex: 0 0 auto;
+  background: #dee1e6;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 8px;
+  gap: 8px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.chrome-lights {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 6px 0 4px;
+  height: 100%;
+  flex: 0 0 auto;
+}
+.chrome-lights i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: block;
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .12);
+}
+.l-red { background: #ff5f57; }
+.l-yellow { background: #febc2e; }
+.l-green { background: #28c840; }
+
+.chrome-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding-top: 8px;
+}
+
+.chrome-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border-radius: 9px 9px 0 0;
+  background: transparent;
+  max-width: 240px;
+  min-width: 150px;
+  font-size: 12.5px;
+  color: #3c4043;
+  position: relative;
+  cursor: default;
+}
+.chrome-tab.is-active {
+  background: #fff;
+  color: #202124;
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, .05);
+}
+.chrome-tab.is-active::before,
+.chrome-tab.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+}
+.chrome-tab.is-active:hover { background: #fff; }
+.chrome-tab:not(.is-active):hover { background: rgba(255, 255, 255, .55); }
+
+.tab-favicon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab-favicon svg, .tab-favicon img { width: 16px; height: 16px; display: block; }
+
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  font-size: 11px;
+  color: #5f6368;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .12s, background .12s;
+}
+.chrome-tab:hover .tab-close { opacity: 1; }
+.tab-close:hover { background: rgba(0, 0, 0, .09); }
+
+.chrome-tab-new {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 3px;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 15px;
+  color: #444;
+  cursor: default;
+  flex: 0 0 auto;
+}
+.chrome-tab-new:hover { background: rgba(0, 0, 0, .07); }
+
+.chrome-extra { flex: 0 0 90px; height: 100%; }
+
+/* ---------------- 工具栏 ---------------- */
+.chrome-toolbar {
+  height: 40px;
+  flex: 0 0 auto;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border-bottom: 1px solid #e5e6e8;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.chrome-nav { display: flex; gap: 2px; flex: 0 0 auto; }
+.nav-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 14px;
+  color: #4a4d51;
+  cursor: default;
+}
+.nav-btn:hover { background: #f1f3f4; }
+.nav-btn.is-disabled { color: #c4c7ca; }
+
+.chrome-omnibox {
+  flex: 1;
+  height: 30px;
+  min-width: 0;
+  background: #f1f3f4;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  margin: 0 6px;
+  font-size: 12.5px;
+  color: #3c4043;
+  transition: background .15s, box-shadow .15s;
+}
+.chrome-omnibox:hover { background: #ebeef1; }
+.omni-lock { display: flex; align-items: center; color: #5f6368; flex: 0 0 auto; }
+.omni-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+}
+
+.chrome-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.ext-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 13px;
+  color: #4a4d51;
+  cursor: default;
+}
+.ext-icon:hover { background: #f1f3f4; }
+
+/* ---------------- 视口（皮肤挂载点） ---------------- */
+.chrome-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* 切换皮肤时的过渡 */
+.chrome-viewport > * { height: 100%; }
+.chrome-viewport.is-switching { opacity: .35; transition: opacity .12s; }
+
+/* 真全屏 */
+.app.is-fs .chrome-tabbar,
+.app.is-fs .chrome-toolbar { display: none; }
+
+@media (max-width: 720px) {
+  .chrome-extra { display: none; }
+  .chrome-tab { min-width: 0; }
+}

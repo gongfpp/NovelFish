@@ -1,0 +1,358 @@
+/* ============================================================
+   skins/gpt.css — GPT 桌面端外观
+   与 DeepSeek 皮肤刻意拉开差异：黑底圆形按钮、灰阶气泡、无左侧竖线
+   ============================================================ */
+
+.gpt {
+  --gpt-text: #0d0d0d;
+  --gpt-text-2: #5d5d5d;
+  --gpt-text-3: #8f8f8f;
+  --gpt-line: #ececec;
+  --gpt-side-bg: #f9f9f9;
+  --gpt-bubble: #f4f4f4;
+
+  display: flex;
+  height: 100%;
+  background: #fff;
+  color: var(--gpt-text);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+/* ---------------- 侧栏 ---------------- */
+.gpt-side {
+  width: 262px;
+  flex: 0 0 262px;
+  background: var(--gpt-side-bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px 8px 10px;
+}
+
+.gpt-side-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 8px;
+}
+.gpt-new {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--gpt-text);
+  cursor: pointer;
+  text-align: left;
+}
+.gpt-new i {
+  font-style: normal;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--gpt-text-2);
+}
+.gpt-new:hover { background: #ededed; }
+.gpt-side-icon {
+  border: 0;
+  background: transparent;
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  color: var(--gpt-text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gpt-side-icon:hover { background: #ededed; }
+
+.gpt-hist { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0; }
+.gpt-hist-group { margin-bottom: 12px; }
+.gpt-hist-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gpt-text-3);
+  padding: 6px 12px 4px;
+}
+.gpt-hist-item {
+  font-size: 13.5px;
+  color: #2f2f2f;
+  padding: 8px 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+.gpt-hist-item:hover { background: #ededed; }
+.gpt-hist-item.is-active { background: #e8e8e8; }
+
+.gpt-side-foot { border-top: 1px solid var(--gpt-line); padding-top: 8px; }
+.gpt-user {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--gpt-text);
+}
+.gpt-user:hover { background: #ededed; }
+.gpt-avatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: #0d0d0d;
+  color: #fff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* ---------------- 主区 ---------------- */
+.gpt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.gpt-top {
+  height: 52px;
+  flex: 0 0 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+.gpt-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gpt-text);
+  padding: 6px 8px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.gpt-model:hover { background: #f2f2f2; }
+.gpt-model .gpt-chev { color: var(--gpt-text-3); }
+.gpt-icon {
+  border: 0;
+  background: transparent;
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  color: var(--gpt-text-2);
+  font-size: 15px;
+  cursor: pointer;
+}
+.gpt-icon:hover { background: #f2f2f2; }
+
+.gpt-thread { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 28px; }
+.gpt-thread-inner {
+  max-width: var(--nf-width, 780px);
+  margin: 0 auto;
+  padding: 0 22px;
+}
+
+/* ---------------- 消息 ---------------- */
+.gpt-msg { margin-bottom: 28px; }
+
+.gpt-user-msg { display: flex; justify-content: flex-end; }
+.gpt-bubble {
+  background: var(--gpt-bubble);
+  padding: 10px 16px;
+  border-radius: 20px;
+  max-width: 78%;
+  font-size: 14.5px;
+  line-height: 1.7;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.gpt-ai-msg { display: flex; gap: 12px; align-items: flex-start; }
+.gpt-ai-avatar { width: 26px; height: 26px; flex: 0 0 26px; margin-top: 1px; }
+.gpt-ai-avatar svg { width: 26px; height: 26px; display: block; }
+.gpt-ai-body { flex: 1; min-width: 0; }
+
+/* ---------------- 已深度思考（小说所在） ---------------- */
+.gpt-think-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.gpt-think-meta {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--gpt-text-3);
+}
+.gpt-think-head:hover .gpt-think-meta { color: var(--gpt-text-2); }
+.gpt-chev { color: var(--gpt-text-3); transition: transform .2s ease; }
+.gpt-msg[data-open="1"] .gpt-chev { transform: rotate(180deg); }
+
+.gpt-think {
+  display: none;
+  margin: 8px 0 16px;
+
+  /* ↓↓↓ 正文阅读区 ↓↓↓ */
+  font-size: var(--nf-font, 14px);
+  line-height: var(--nf-line, 1.9);
+  color: #6f6f6f;
+}
+.gpt-msg[data-open="1"] .gpt-think { display: block; }
+
+.gpt-think .nf-p { margin: 0 0 .74em; }
+.gpt-think .nf-ch {
+  margin: 1.15em 0 .55em;
+  font-size: 1.06em;
+  font-weight: 600;
+  color: #4a4a4a;
+}
+.gpt-think .nf-sec:first-child .nf-ch:first-child { margin-top: .1em; }
+
+.gpt-think .nf-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .92em;
+  color: #b4b4b4;
+  padding: 2px 0 8px;
+}
+.gpt-think .nf-dots { display: inline-flex; gap: 3px; }
+.gpt-think .nf-dots i {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #c9c9c9;
+  animation: gptBlink 1.1s infinite ease-in-out;
+}
+.gpt-think .nf-dots i:nth-child(2) { animation-delay: .16s; }
+.gpt-think .nf-dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes gptBlink { 0%, 80%, 100% { opacity: .3 } 40% { opacity: 1 } }
+
+/* ---------------- 回答正文 ---------------- */
+.gpt-answer {
+  font-size: 15.5px;
+  line-height: 1.78;
+  color: var(--gpt-text);
+  word-break: break-word;
+}
+.gpt-answer p { margin: 0 0 .8em; }
+.gpt-answer strong { font-weight: 600; }
+.gpt-answer ul { margin: 0 0 .8em; padding-left: 1.35em; }
+.gpt-answer li { margin-bottom: .3em; }
+.gpt-answer .rt-code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: #f1f1f1;
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.gpt-answer .rt-pre {
+  background: #f7f7f7;
+  border-radius: 14px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 .9em;
+}
+.gpt-answer .rt-pre code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #1d1d1d;
+  white-space: pre;
+}
+
+.gpt-acts { display: flex; gap: 2px; margin-top: 8px; }
+.gpt-act {
+  border: 0;
+  background: transparent;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  color: #9b9b9b;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gpt-act:hover { background: #f2f2f2; color: #5d5d5d; }
+
+/* ---------------- 输入区 ---------------- */
+.gpt-composer { flex: 0 0 auto; padding: 4px 22px 12px; }
+.gpt-input-wrap {
+  max-width: var(--nf-width, 780px);
+  margin: 0 auto;
+  border: 1px solid #e3e3e3;
+  border-radius: 26px;
+  padding: 12px 12px 8px 16px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+  transition: border-color .15s;
+}
+.gpt-input-wrap:focus-within { border-color: #cfcfcf; }
+.gpt-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  resize: none;
+  font-size: 15px;
+  line-height: 1.6;
+  max-height: 168px;
+  background: transparent;
+  color: var(--gpt-text);
+}
+.gpt-input::placeholder { color: #9b9b9b; }
+
+.gpt-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.gpt-tools-right { display: flex; align-items: center; gap: 6px; }
+.gpt-round {
+  border: 0;
+  background: transparent;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  color: #5d5d5d;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gpt-round:hover { background: #f2f2f2; }
+.gpt-send {
+  border: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: #0d0d0d;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .1s, background .15s;
+}
+.gpt-send:hover { background: #2f2f2f; }
+.gpt-send:active { transform: scale(.94); }
+
+.gpt-disclaimer {
+  text-align: center;
+  font-size: 11.5px;
+  color: #9b9b9b;
+  margin-top: 9px;
+}
+
+@media (max-width: 860px) {
+  .gpt-side { display: none; }
+}

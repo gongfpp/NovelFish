@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek - 探索未至之境</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234D6BFE'/%3E%3Cpath d='M9 22V10h4.2c3.6 0 5.8 2.1 5.8 5.6S16.8 22 13.2 22H9zm3-2.4h1.1c1.7 0 2.8-1.2 2.8-3.1s-1.1-3.1-2.8-3.1H12v6.2z' fill='white'/%3E%3Ccircle cx='22.5' cy='20.5' r='2' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/browser.css">
+</head>
+<body class="boot">
+
+<div class="app" id="app" data-shell="chrome">
+
+  <!-- ============ 第 1 层：浏览器外框 ============ -->
+  <div class="chrome" id="chrome">
+    <div class="chrome-tabbar">
+      <div class="chrome-lights">
+        <i class="l-red"></i><i class="l-yellow"></i><i class="l-green"></i>
+      </div>
+      <div class="chrome-tabs">
+        <div class="chrome-tab is-active">
+          <span class="tab-favicon" id="tabFavicon"></span>
+          <span class="tab-title" id="tabTitle">DeepSeek - 探索未至之境</span>
+          <span class="tab-close" title="关闭">&#10005;</span>
+        </div>
+        <button class="chrome-tab-new" title="新建标签页">+</button>
+      </div>
+      <div class="chrome-extra"></div>
+    </div>
+
+    <div class="chrome-toolbar">
+      <div class="chrome-nav">
+        <button class="nav-btn" title="后退">&#8592;</button>
+        <button class="nav-btn is-disabled" title="前进">&#8594;</button>
+        <button class="nav-btn" title="重新加载">&#8635;</button>
+      </div>
+      <div class="chrome-omnibox">
+        <span class="omni-lock" title="连接安全">
+          <svg viewBox="0 0 24 24" width="12" height="12"><path d="M17 9V7a5 5 0 0 0-10 0v2H5.8A1.8 1.8 0 0 0 4 10.8v8.4A1.8 1.8 0 0 0 5.8 21h12.4A1.8 1.8 0 0 0 20 19.2v-8.4A1.8 1.8 0 0 0 18.2 9H17zm-8 0V7a3 3 0 0 1 6 0v2H9z" fill="currentColor"/></svg>
+        </span>
+        <span class="omni-url" id="omniUrl">chat.deepseek.com</span>
+      </div>
+      <div class="chrome-actions">
+        <span class="ext-icon" title="扩展程序">&#129513;</span>
+        <span class="ext-icon" title="个人资料">&#128100;</span>
+        <span class="ext-icon" title="自定义及控制 Google Chrome">&#8942;</span>
+      </div>
+    </div>
+
+    <!-- 皮肤挂载点 -->
+    <div class="chrome-viewport" id="skinRoot"></div>
+  </div>
+
+</div>
+
+<!-- ============ 第 2 层：控制台（伪装成 DeepSeek 设置抽屉） ============ -->
+<div class="scrim" id="scrim" hidden></div>
+
+<aside class="console" id="console" hidden aria-label="控制台">
+  <header class="console-head">
+    <h2>设置</h2>
+    <button class="console-close" id="consoleClose" title="关闭 (Esc)">&#10005;</button>
+  </header>
+
+  <div class="console-tabs" id="consoleTabs">
+    <button class="ctab is-active" data-tab="book">书架</button>
+    <button class="ctab" data-tab="read">阅读</button>
+    <button class="ctab" data-tab="skin">皮肤</button>
+    <button class="ctab" data-tab="mask">伪装</button>
+    <button class="ctab" data-tab="help">帮助</button>
+  </div>
+
+  <div class="console-body">
+
+    <!-- 书架 -->
+    <section class="cpane is-active" data-pane="book">
+      <div class="field">
+        <label class="field-label">当前书目</label>
+        <div class="book-meta">
+          <div class="book-title" id="bookTitle">—</div>
+          <div class="book-sub" id="bookSub">—</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">载入本地小说</label>
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept=".txt,.md,text/plain" hidden>
+          <span class="dz-main">把 .txt / .md 拖到这里，或点击选择文件</span>
+          <span class="dz-sub">自动识别「第X章」分章；无分章则按字数切分</span>
+        </div>
+        <div class="row-btns">
+          <button class="btn btn-ghost" id="btnRestoreSample">恢复示例小说</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">阅读进度 <span class="field-hint" id="progHint">—</span></label>
+        <div class="progress"><i id="progBar" style="width:0%"></i></div>
+        <div class="row-btns">
+          <button class="btn btn-ghost" id="btnPrevCh">上一章</button>
+          <button class="btn btn-ghost" id="btnNextCh">下一章</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">章节 <span class="field-hint" id="chCount">—</span></label>
+        <div class="chapter-list" id="chapterList"></div>
+      </div>
+    </section>
+
+    <!-- 阅读 -->
+    <section class="cpane" data-pane="read">
+      <div class="field">
+        <label class="field-label">正文字号 <span class="field-hint" id="vFont">14 px</span></label>
+        <input type="range" id="rFont" min="12" max="22" step="1">
+      </div>
+      <div class="field">
+        <label class="field-label">行距 <span class="field-hint" id="vLine">1.9</span></label>
+        <input type="range" id="rLine" min="1.4" max="2.6" step="0.1">
+      </div>
+      <div class="field">
+        <label class="field-label">正文宽度 <span class="field-hint" id="vWidth">720 px</span></label>
+        <input type="range" id="rWidth" min="520" max="1100" step="20">
+      </div>
+      <div class="field">
+        <label class="field-label">自动滚动 <span class="field-hint" id="vSpeed">1.0 x</span></label>
+        <input type="range" id="rSpeed" min="0.2" max="3" step="0.1">
+        <div class="switch-row">
+          <span>开启自动滚动</span>
+          <button class="switch" id="swAuto" role="switch" aria-checked="false"><i></i></button>
+        </div>
+        <p class="tip">自动滚动会在你手动滚动、切章或触发老板键时自动暂停。</p>
+      </div>
+    </section>
+
+    <!-- 皮肤 -->
+    <section class="cpane" data-pane="skin">
+      <p class="pane-lead">皮肤是独立插件：一个 JS 文件 + 一个 CSS 文件即可接入。新增皮肤只需在皮肤清单里登记。</p>
+      <div class="skin-grid" id="skinGrid"></div>
+    </section>
+
+    <!-- 伪装 -->
+    <section class="cpane" data-pane="mask">
+      <div class="field">
+        <label class="field-label">伪装剧本</label>
+        <select id="selScript" class="select"></select>
+        <p class="tip">问答正文是伪装内容，小说始终只出现在「深度思考」框里。</p>
+      </div>
+      <div class="field">
+        <label class="field-label">自动化</label>
+        <div class="switch-row">
+          <span>窗口失焦时自动收起「深度思考」</span>
+          <button class="switch" id="swBlur" role="switch" aria-checked="true"><i></i></button>
+        </div>
+        <div class="switch-row">
+          <span>加载时默认展开「深度思考」</span>
+          <button class="switch" id="swOpen" role="switch" aria-checked="true"><i></i></button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">显示</label>
+        <div class="switch-row">
+          <span>显示浏览器外框</span>
+          <button class="switch" id="swChrome" role="switch" aria-checked="true"><i></i></button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">程序化接入</label>
+        <p class="tip">控制台暴露在 <code>window.NovelFish</code>，可在浏览器控制台或油猴脚本里驱动，例如
+          <code>NovelFish.api.gotoChapter(3)</code>、<code>NovelFish.api.panic()</code>。</p>
+      </div>
+    </section>
+
+    <!-- 帮助 -->
+    <section class="cpane" data-pane="help">
+      <table class="keys">
+        <tbody>
+          <tr><td><kbd>Esc</kbd></td><td>老板键：收起 / 展开「深度思考」，并把视野拉回伪装回答</td></tr>
+          <tr><td><kbd>空格</kbd> / <kbd>J</kbd></td><td>向下翻一屏</td></tr>
+          <tr><td><kbd>Shift</kbd>+<kbd>空格</kbd> / <kbd>K</kbd></td><td>向上翻一屏</td></tr>
+          <tr><td><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td><td>上一章 / 下一章</td></tr>
+          <tr><td><kbd>A</kbd></td><td>自动滚动开关</td></tr>
+          <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>字号增减</td></tr>
+          <tr><td><kbd>,</kbd></td><td>打开控制台（伪装成设置面板）</td></tr>
+          <tr><td><kbd>T</kbd></td><td>隐藏 / 显示浏览器外框</td></tr>
+          <tr><td><kbd>F</kbd></td><td>真全屏</td></tr>
+        </tbody>
+      </table>
+      <p class="tip">在输入框里打字时快捷键自动让位，只有 <kbd>Esc</kbd> 始终生效。</p>
+    </section>
+
+  </div>
+</aside>
+
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="global-drop" id="globalDrop" hidden><div>松手即载入小说</div></div>
+
+<script src="js/core/store.js"></script>
+<script src="js/core/novel.js"></script>
+<script src="js/core/camouflage.js"></script>
+<script src="js/core/skins.js"></script>
+<script src="js/data/sample-novel.js"></script>
+<script src="js/core/app.js"></script>
+</body>
+</html>
