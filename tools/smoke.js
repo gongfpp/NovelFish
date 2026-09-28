@@ -6,9 +6,9 @@
      macOS 与 Windows 双外框 / Chrome 与 Edge 双外框 /
      地址栏与工具栏图标注入 / 站点信息、扩展程序、个人资料、主菜单四个面板 /
      侧边栏开关 / 对话列表切换与搜索 /
-     「深度思考」表头冻结吸顶 / 消息操作条 / 分享弹窗 /
+      「深度思考」表头冻结吸顶 / 消息操作条 / 分享弹窗 /
      标签页标题与登录头像自定义 / 主菜单的查找、缩放、删除浏览数据 /
-     模板库 / file:// 可用性
+     模板库 / file:// 可用性 / EPUB 导入（nav 分章、NCX 分章、坏文件兜底）
    运行：
      cd <项目根> && python3 -m http.server 8931 --bind 127.0.0.1 &
      NODE_PATH=<playwright 所在 node_modules> node tools/smoke.js
@@ -29,6 +29,12 @@ const AVATAR_PNG = path.join(os.tmpdir(), 'nf-avatar-' + process.pid + '.png');
 fs.writeFileSync(AVATAR_PNG, Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
   'base64'));
+
+/* EPUB 样本，以及一份「扩展名是 epub、其实是纯文本」的坏文件（跑完就删） */
+const EPUB_V3 = path.join(__dirname, 'fixtures', 'sample.epub');
+const EPUB_NCX = path.join(__dirname, 'fixtures', 'sample-ncx.epub');
+const FAKE_EPUB = path.join(os.tmpdir(), 'nf-fake-' + process.pid + '.epub');
+fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的文本文件\n');
 
 (async () => {
   const errors = [];
@@ -538,10 +544,21 @@ fs.writeFileSync(AVATAR_PNG, Buffer.from(
   await page.waitForTimeout(200);
   check('个人资料面板可打开', await page.locator('#popAvatar').isVisible());
   const avatarTxt = await page.locator('#popAvatar').textContent();
-  check('资料面板显示用户名', /摸鱼的人/.test(avatarTxt), avatarTxt.slice(0, 24));
-  check('资料面板显示邮箱', /moyu\.ren@example\.com/.test(avatarTxt));
+  check('资料面板显示用户名', /陈默/.test(avatarTxt), avatarTxt.slice(0, 24));
+  check('资料面板显示邮箱', /chenmo@example\.com/.test(avatarTxt));
+  check('默认资料不再带「摸鱼」这类字眼', !/摸/.test(avatarTxt));
   check('资料面板显示同步状态', /同步功能已开启/.test(avatarTxt));
   await shot('14-pop-avatar');
+
+  // 左下角账户行（侧栏）与地址栏头像的默认值：名字与首字母都不该出现「摸」
+  check('侧栏左下角默认用户名不是「摸鱼的人」',
+    (await page.locator('.ds-account-name').textContent()).trim() === '陈默',
+    (await page.locator('.ds-account-name').textContent()).trim());
+  check('侧栏头像首字母不是「摸」',
+    (await page.locator('.ds-account-avatar').textContent()).trim() === '陈',
+    (await page.locator('.ds-account-avatar').textContent()).trim());
+  check('地址栏头像按钮也不是「摸」',
+    (await page.locator('.chrome-avatar').textContent()).trim() === '陈');
 
   // 主菜单
   await page.locator('[data-pop="menu"]').click();
@@ -915,6 +932,87 @@ fs.writeFileSync(AVATAR_PNG, Buffer.from(
   check('file:// 下无控制台错误', fileErr.length === 0, fileErr.join(' | '));
   await p2.close();
 
+  /* ---------- 22. EPUB 导入 ---------- */
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.ds', { timeout: 5000 });
+  await page.waitForTimeout(700);
+
+  await openConsole('book');
+  check('书架页写明支持 EPUB', /epub/i.test(await page.locator('#dropzone').textContent()));
+  check('文件选择框放开 .epub',
+    ((await page.locator('#fileInput').getAttribute('accept')) || '').includes('.epub'));
+
+  // EPUB3：nav 目录分章；spine 里的目录页与封面残页应被排掉；一章两个 h2 应切成两章
+  await page.locator('#fileInput').setInputFiles(EPUB_V3);
+  await page.waitForTimeout(1600);
+  const ep3 = await page.evaluate(() => ({
+    title: NovelFish.store.state.novel.title,
+    stored: Array.isArray(NovelFish.store.state.novel.chapters)
+      ? NovelFish.store.state.novel.chapters.length : -1,
+    count: NovelFish.novel.chapterCount(),
+    titles: NovelFish.novel.toc().map(c => c.title),
+    headTitle: (document.getElementById('bookTitle').textContent || '').trim(),
+    listItems: document.querySelectorAll('#chapterList .chapter-item').length,
+    firstPara: (document.querySelector('.nf-p') || {}).textContent || '',
+    toast: (document.getElementById('toastWrap').textContent || '').trim()
+  }));
+  check('EPUB 书名取自 dc:title', ep3.title === '山海拾遗', ep3.title);
+  check('EPUB 分章数正确（目录页与封面已排掉、一章两节已拆开）',
+    ep3.count === 5, String(ep3.count) + ' -> ' + ep3.titles.join(' | '));
+  check('章节名来自书内 nav 目录',
+    ep3.titles[0] === '第一章 落霞' && ep3.titles[3] === '第三章 夜航',
+    ep3.titles.join(' | '));
+  check('一章拆两节时用正文小标题',
+    ep3.titles[1] === '第二章 潮信' && ep3.titles[2] === '潮信·补遗',
+    ep3.titles.join(' | '));
+  check('正文标题优先于 nav 名',
+    ep3.titles[4] === '归墟（下）', ep3.titles[4]);
+  check('EPUB 正文进了「深度思考」框', ep3.firstPara.length > 20, ep3.firstPara.slice(0, 16));
+  check('控制台书目与章节列表同步刷新',
+    ep3.headTitle.includes('山海拾遗') && ep3.listItems === 5,
+    ep3.headTitle + ' / ' + ep3.listItems);
+  check('导入后给了明确回执', /已载入《山海拾遗》共 5 章/.test(ep3.toast), ep3.toast);
+  await shot('20-epub');
+
+  // 章节名落盘 → 刷新后不该重新解析压缩包
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.ds-think-body .nf-p', { timeout: 5000 });
+  await page.waitForTimeout(600);
+  const ep3r = await page.evaluate(() => ({
+    title: NovelFish.store.state.novel.title,
+    count: NovelFish.novel.chapterCount(),
+    text: NovelFish.store.state.novel.text
+  }));
+  check('刷新后 EPUB 从已切好的章节恢复', ep3r.title === '山海拾遗' && ep3r.count === 5,
+    ep3r.title + ' / ' + ep3r.count);
+  check('刷新后不再重复保存整本纯文本', !ep3r.text);
+
+  // EPUB2：没有 nav，章节名只能来自 NCX
+  // （文件选择框本身是隐藏的，直接 setInputFiles，不必再开一次控制台）
+  await page.locator('#fileInput').setInputFiles(EPUB_NCX);
+  await page.waitForTimeout(1400);
+  const ep2 = await page.evaluate(() => ({
+    title: NovelFish.store.state.novel.title,
+    count: NovelFish.novel.chapterCount(),
+    titles: NovelFish.novel.toc().map(c => c.title)
+  }));
+  check('EPUB2 书名正确', ep2.title === '旧航日志', ep2.title);
+  check('EPUB2 章节名取自 NCX', ep2.count === 2 && ep2.titles[0] === '卷一 起锚' &&
+    ep2.titles[1] === '卷二 锚地', ep2.count + ' -> ' + ep2.titles.join(' | '));
+
+  // 坏文件：扩展名是 epub 却不是压缩包 → 给出提示且不动当前书
+  await page.locator('#fileInput').setInputFiles(FAKE_EPUB);
+  await page.waitForTimeout(900);
+  const bad = await page.evaluate(() => ({
+    toast: (document.getElementById('toastWrap').textContent || '').trim(),
+    title: NovelFish.store.state.novel.title,
+    count: NovelFish.novel.chapterCount()
+  }));
+  check('坏 EPUB 有明确失败提示', /EPUB 解析失败/.test(bad.toast), bad.toast);
+  check('坏 EPUB 不影响正在读的书', bad.title === '旧航日志' && bad.count === 2,
+    bad.title + ' / ' + bad.count);
+  check('EPUB 解析全程无页面错误', errors.length === 0, errors.join(' | '));
+
   /* ---------- 汇总 ---------- */
   console.log('\n== PASS (' + ok.length + ') ==');
   ok.forEach(l => console.log('  ✓ ' + l));
@@ -927,5 +1025,6 @@ fs.writeFileSync(AVATAR_PNG, Buffer.from(
 
   await browser.close();
   try { fs.unlinkSync(AVATAR_PNG); } catch (e) { /* 已经删掉就算了 */ }
+  try { fs.unlinkSync(FAKE_EPUB); } catch (e) { /* 已经删掉就算了 */ }
   process.exit(fail.length || errors.length ? 1 : 0);
 })().catch(e => { console.error('SMOKE CRASH:', e); process.exit(2); });

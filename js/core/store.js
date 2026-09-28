@@ -10,6 +10,16 @@ window.NovelFish = window.NovelFish || {};
   var SAVE_DEBOUNCE = 400;
   var MAX_TEXT_BYTES = 1.6 * 1024 * 1024; // 本地存储里的正文上限，超出则不落盘
 
+  /**
+   * 默认资料。伪装的关键是「看起来像个普通账号」——
+   * 名字取一个平平无奇的中文名，头像就用它的姓氏，不要带任何和本应用沾边的字。
+   * 用户可在 设置 → 外观 里随时改。
+   */
+  var DEFAULT_PROFILE_NAME = '陈默';
+  var DEFAULT_PROFILE_EMAIL = 'chenmo@example.com';
+  var LEGACY_PROFILE_NAME = '摸鱼的人';
+  var LEGACY_PROFILE_EMAIL = 'moyu.ren@example.com';
+
   /* ---------------- 工具 ---------------- */
   var util = {
     clamp: function (v, min, max) { return Math.min(max, Math.max(min, v)); },
@@ -121,7 +131,7 @@ window.NovelFish = window.NovelFish || {};
   /* ---------------- 默认状态 ---------------- */
   function defaultState() {
     return {
-      version: 4,
+      version: 5,
       skin: 'deepseek',
       /* 正文默认排版对齐 DeepSeek 官网「深度思考」的规格：14px / 行距 1.7（=24px）/ 栏宽 840px */
       reading: { font: 14, line: 1.7, width: 840, auto: false, speed: 1 },
@@ -136,13 +146,14 @@ window.NovelFish = window.NovelFish || {};
       },
       /* 浏览器外框里显示的资料：地址栏头像、资料面板、标签页标题 */
       browser: {
-        name: '摸鱼的人',
-        email: 'moyu.ren@example.com',
+        name: DEFAULT_PROFILE_NAME,
+        email: DEFAULT_PROFILE_EMAIL,
         avatar: '',                     // 自定义头像（dataURL），空则用首字母
         avatarColor: '#4d6bfe',         // 头像底色
         tabTitle: ''                    // 空则跟随皮肤自带的标题
       },
-      novel: { title: '', docId: '', text: '' },
+      /* text 给纯文本用；chapters 给 EPUB 用（章节名来自书的目录，重开时不必再解析） */
+      novel: { title: '', docId: '', text: '', chapters: null },
       progress: { chapter: 0, loadedThrough: 0, scrollTop: 0, feedOffset: null },
       /* 会话列表：见 js/core/chat.js */
       chat: { activeId: '', seq: 0, convs: [] },
@@ -187,32 +198,53 @@ window.NovelFish = window.NovelFish || {};
   };
 
   /* ---------------- Toast ---------------- */
+  /**
+   * 弹一条提示。返回元素，需要提前收起时交给 NF.toast.hide()。
+   * 解析 EPUB 这类有等待感的长操作会用到。
+   */
   function toast(msg, ms) {
     var wrap = document.getElementById('toastWrap');
-    if (!wrap) return;
+    if (!wrap) return null;
     var el = document.createElement('div');
     el.className = 'toast';
     el.textContent = msg;
-    wrap.appendChild(el);
-    setTimeout(function () {
+    var gone = false;
+    function hide() {
+      if (gone || !el.parentNode) return;
+      gone = true;
       el.classList.add('is-out');
       setTimeout(function () { el.remove(); }, 260);
-    }, ms || 2000);
+    }
+    el.hide = hide;
+    wrap.appendChild(el);
+    setTimeout(hide, ms || 2000);
+    return el;
   }
+
+  toast.hide = function (el) { if (el && el.hide) el.hide(); };
 
   /* ---------------- 存储 ---------------- */
   var state = defaultState();
 
   /**
    * 老存档的顺带修正。只在用户还停在上一个版本的默认值时才动，
-   * 已经自己调过字号 / 行距 / 宽度的一律保留。
+   * 已经自己调过字号 / 行距 / 宽度 / 资料的一律保留。
    */
   function migrate(parsed) {
     var from = parsed.version || 0;
+
     if (from < 4 && state.reading.line === 1.9 && state.reading.width === 780) {
       state.reading.line = 1.7;
       state.reading.width = 840;
     }
+
+    // 旧默认资料「摸鱼的人」会暴露这台机器上在干什么，只有原样没改过才替换
+    if (from < 5 && state.browser.name === LEGACY_PROFILE_NAME) {
+      state.browser.name = DEFAULT_PROFILE_NAME;
+      if (state.browser.email === LEGACY_PROFILE_EMAIL) state.browser.email = DEFAULT_PROFILE_EMAIL;
+      state.browser.avatar = '';
+    }
+
     state.version = defaultState().version;
   }
 
@@ -237,6 +269,8 @@ window.NovelFish = window.NovelFish || {};
       s.novel.text = ''; // 超长正文不落盘，避免撑爆 localStorage
       s.novel.tooBig = true;
     }
+    // novel.chapters（EPUB）的体积在装载时就已经卡过上限 —— 见 app.js setNovelChapters。
+    // 这里不再重复测量：正文有几十万字，每次滚动落盘都 JSON.stringify 一遍会白白拖慢。
     return s;
   }
 

@@ -201,6 +201,8 @@
   /* ============================================================
      小说装载
      ============================================================ */
+  var STORE_TEXT_MAX = 1.6 * 1024 * 1024;   // 正文落盘上限，超出则本次不持久化
+
   function resetProgress() {
     state.progress.chapter = 0;
     state.progress.loadedThrough = 0;
@@ -210,19 +212,37 @@
     NF.store.save();
   }
 
-  function setNovel(text, title, opts) {
-    opts = opts || {};
-    NF.novel.parse(text, title);
+  /** 装好一本书之后的公共收尾：清进度 → 重建目录 → 换皮肤 */
+  function afterLoad(title) {
     state.novel.title = title;
-    state.novel.text = text.length > 1.6 * 1024 * 1024 ? '' : text;
     state.novel.docId = String(Date.now());
     resetProgress();
     buildChapterList();
     syncBookMeta();
     mountSkin(state.skin, { remount: true });
-    if (!opts.silent) {
-      NF.toast('已载入《' + title + '》共 ' + NF.novel.chapterCount() + ' 章');
+    NF.toast('已载入《' + title + '》共 ' + NF.novel.chapterCount() + ' 章');
+  }
+
+  /** 纯文本（.txt / .md）：走正则分章 */
+  function setNovel(text, title) {
+    NF.novel.parse(text, title);
+    state.novel.text = text.length > STORE_TEXT_MAX ? '' : text;
+    state.novel.chapters = null;
+    afterLoad(title);
+  }
+
+  /**
+   * 已经切好章节的书（EPUB）：目录名来自书本身的 nav / NCX，
+   * 直接落章节数组，重开时不必再解析一遍 EPUB。
+   */
+  function setNovelChapters(chapters, title) {
+    NF.novel.parseChapters(chapters, title);
+    state.novel.text = '';
+    state.novel.chapters = JSON.stringify(chapters).length > STORE_TEXT_MAX ? null : chapters;
+    if (!state.novel.chapters) {
+      NF.toast('这本书太大，本次阅读有效但不会记住进度', 4000);
     }
+    afterLoad(title);
   }
 
   function readTextFile(file) {
@@ -245,11 +265,29 @@
     });
   }
 
+  function importEpub(file) {
+    var pending = NF.toast('正在解析 EPUB…', 60000);
+    return NF.epub.read(file).then(function (book) {
+      NF.toast.hide(pending);
+      setNovelChapters(book.chapters, book.title);
+    }).catch(function (err) {
+      NF.toast.hide(pending);
+      // 用 warn 而不是 error：用户挑了个坏文件不算应用的错误，
+      // 提示已经直接给到界面上，同时别把「控制台零错误」这条验收线打红。
+      console.warn('[NovelFish] EPUB 解析失败', err);
+      NF.toast('EPUB 解析失败：' + err.message, 4000);
+    });
+  }
+
   function handleFiles(fileList) {
     var file = fileList && fileList[0];
     if (!file) return;
-    if (!/\.(txt|md|text)$/i.test(file.name) && file.type.indexOf('text') !== 0) {
-      NF.toast('只支持 .txt / .md 文本文件');
+    if (/\.epub$/i.test(file.name) || /epub\+zip/i.test(file.type || '')) {
+      importEpub(file);
+      return;
+    }
+    if (!/\.(txt|md|text)$/i.test(file.name) && (file.type || '').indexOf('text') !== 0) {
+      NF.toast('支持 .txt / .md / .epub');
       return;
     }
     readTextFile(file).then(function (text) {
@@ -923,9 +961,13 @@
   function boot() {
     NF.chat.ensure();
 
-    var text = state.novel.text || NF.data.sampleNovel.text;
     var title = state.novel.title || NF.data.sampleNovel.title;
-    NF.novel.parse(text, title);
+    // 上次读的是 EPUB：章节直接回填，不必再解一遍压缩包
+    if (state.novel.chapters && state.novel.chapters.length) {
+      NF.novel.parseChapters(state.novel.chapters, title);
+    } else {
+      NF.novel.parse(state.novel.text || NF.data.sampleNovel.text, title);
+    }
 
     // 进度上界纠正（换过书或文件变短时）
     var n = NF.novel.chapterCount();

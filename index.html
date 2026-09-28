@@ -62,7 +62,8 @@
         <button class="ext-icon" data-pop="ext" data-icon="tools.extensions" title="扩展程序"></button>
         <button class="ext-icon edge-only" data-pop="collections" data-icon="tools.collections" title="集锦"></button>
         <button class="ext-icon edge-only" data-pop="favorites" data-icon="tools.favorites" title="收藏夹"></button>
-        <button class="chrome-avatar" data-pop="avatar" title="个人资料">摸</button>
+        <!-- 内容由 js/core/chrome.js 按浏览器资料绘制（自定义头像或首字母 + 底色） -->
+        <button class="chrome-avatar" data-pop="avatar" title="个人资料"></button>
         <button class="ext-icon" data-pop="menu" data-icon="tools.more" title="自定义及控制 Google Chrome"></button>
       </div>
 
@@ -123,9 +124,9 @@
       <div class="field">
         <label class="field-label">载入本地小说</label>
         <div class="dropzone" id="dropzone">
-          <input type="file" id="fileInput" accept=".txt,.md,text/plain" hidden>
-          <span class="dz-main">把 .txt / .md 拖到这里，或点击选择文件</span>
-          <span class="dz-sub">自动识别「第X章」分章；无分章则按字数切分</span>
+          <input type="file" id="fileInput" accept=".txt,.md,.epub" hidden>
+          <span class="dz-main">把 .txt / .md / .epub 拖到这里，或点击选择文件</span>
+          <span class="dz-sub">EPUB 按书内目录分章；纯文本自动识别「第X章」，无分章则按字数切分</span>
         </div>
         <div class="row-btns">
           <button class="btn btn-ghost" id="btnRestoreSample">恢复示例小说</button>
@@ -287,6 +288,7 @@
 <script src="js/data/browser-icons.js"></script>
 <script src="js/core/camouflage.js"></script>
 <script src="js/core/novel.js"></script>
+<script src="js/core/epub.js"></script>
 <script src="js/core/chat.js"></script>
 <script src="js/core/skins.js"></script>
 <script src="js/data/sample-novel.js"></script>
