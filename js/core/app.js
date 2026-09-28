@@ -168,6 +168,31 @@
     /** 皮肤里的「上传文件」直接当换书入口用 */
     loadNovelFile: function (file) { handleFiles([file]); },
 
+    /* --- 分享副本 --- */
+    /**
+     * 造一条分享链接。链接形状（/share/<18 位>）与官网一致，
+     * 只有「深度思考」展开、小说看得见的时候，才把这本书编进 fragment 一起带走。
+     * @param {boolean} withNovel
+     * @returns {Promise<{url: string, embedded: boolean, loadedToFile: boolean}>}
+     */
+    share: {
+      make: function (withNovel) {
+        var id = NF.share.newId(18);
+        if (!withNovel) {
+          return Promise.resolve({ url: NF.share.link(id), embedded: false, loadedToFile: false });
+        }
+        return NF.share.pack(api.doc).then(function (payload) {
+          if (payload) return { url: NF.share.link(id, payload), embedded: true, loadedToFile: false };
+          // 编不进链接的书（几百万字的那种，或者空文档）：落成文件。
+          // 链接这时退化成官网的纯 id 形状 —— 宁可它「只是装饰」，
+          // 也不要给出一条长到打不开的 URL。
+          return { url: NF.share.link(id), embedded: false, loadedToFile: downloadShareCopy() };
+        });
+      },
+      accept: acceptShare,
+      parse: NF.share.parse
+    },
+
     on: function (evt, fn) { return NF.bus.on(evt, fn); },
     emit: function (evt, p) { NF.bus.emit(evt, p); }
   };
@@ -223,11 +248,16 @@
     NF.store.save();
   }
 
-  /** 装好一本书之后的公共收尾：清进度 → 重建目录 → 换皮肤 */
-  function afterLoad(title) {
+  /**
+   * 装好一本书之后的公共收尾：清进度 → 重建目录 → 换皮肤。
+   * opts.noMount 给启动路径用：那时候皮肤还没挂，界面交给 boot 统一装配。
+   */
+  function afterLoad(title, opts) {
+    opts = opts || {};
     state.novel.title = title;
     state.novel.docId = String(Date.now());
     resetProgress();
+    if (opts.noMount) return;
     buildChapterList();
     syncBookMeta();
     mountSkin(state.skin, { remount: true });
@@ -243,17 +273,17 @@
   }
 
   /**
-   * 已经切好章节的书（EPUB）：目录名来自书本身的 nav / NCX，
-   * 直接落章节数组，重开时不必再解析一遍 EPUB。
+   * 已经切好章节的书（EPUB / 分享副本）：目录名来自书本身，
+   * 直接落章节数组，重开时不必再解析一遍。
    */
-  function setNovelChapters(chapters, title) {
+  function setNovelChapters(chapters, title, opts) {
     NF.novel.parseChapters(chapters, title);
     state.novel.text = '';
     state.novel.chapters = JSON.stringify(chapters).length > STORE_TEXT_MAX ? null : chapters;
     if (!state.novel.chapters) {
       NF.toast('这本书太大，本次阅读有效但不会记住进度', 4000);
     }
-    afterLoad(title);
+    afterLoad(title, opts);
   }
 
   function readTextFile(file) {
@@ -305,6 +335,63 @@
       var title = file.name.replace(/\.[^.]+$/, '');
       setNovel(text, title);
     }).catch(function (err) { NF.toast(err.message); });
+  }
+
+  /* ============================================================
+     分享副本：链接放不下的书落成文件 / 收下别人发来的副本
+     ============================================================ */
+
+  /** 分享副本落地成 .txt（章节标题保留），返回是否真的存了 */
+  function downloadShareCopy() {
+    var doc = NF.novel.doc;
+    if (!doc.chapters.length) return false;
+    var blob = new Blob([NF.share.exportText(doc)], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (doc.title || '未命名') + '-分享副本.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    return true;
+  }
+
+  /**
+   * 收下一条分享副本（整条链接或裸载荷都收）。
+   * 走的是和「载入本地文件」同一条收尾：进度重置、重挂皮肤、
+   * 「深度思考」按默认展开 —— 打开链接的人直接看到书。
+   * @param {{quiet?: boolean, noMount?: boolean}} [opts]
+   */
+  function acceptShare(text, opts) {
+    opts = opts || {};
+    var payload = NF.share.parse(text);
+    if (!payload) return Promise.resolve(false);
+
+    var pending = opts.quiet ? null : NF.toast('正在打开分享副本…', 20000);
+    return NF.share.unpack(payload).then(function (book) {
+      NF.toast.hide(pending);
+      if (!book) { NF.toast('这条分享链接已损坏', 3000); return false; }
+      setNovelChapters(book.chapters, book.title, opts);
+      return true;
+    }, function () {
+      NF.toast.hide(pending);
+      NF.toast('这条分享链接已损坏', 3000);
+      return false;
+    });
+  }
+
+  /** 页面 URL 上带着的分享载荷（#nf=…） */
+  function readShareHash() { return NF.share.parse(location.hash || ''); }
+
+  /**
+   * 收下之后把载荷从地址栏抹掉。留着的话每次刷新都会重装一遍这本书，
+   * 阅读进度会被反复清零。
+   */
+  function clearShareHash() {
+    var clean = location.href.split('#')[0];
+    try { history.replaceState(null, '', clean); }
+    catch (e) { location.hash = ''; }   // file:// 下 replaceState 会被拒
   }
 
   /* ============================================================
@@ -566,6 +653,7 @@
       [k(mod) + ' + ' + k('F'), '页内查找'],
       [k(mod) + ' + ' + k('+') + ' / ' + k('-') + ' / ' + k('0'), '浏览器缩放'],
       [k(mod) + ' + ' + k('T'), '新标签页'],
+      ['分享链接', '顶栏「分享」出的链接自带这本书；把它粘回窗口即载入'],
       [k('T'), '隐藏 / 显示浏览器外框'],
       [k('F'), '真全屏（Windows 外框的「最大化」按钮同效）']
     ];
@@ -925,6 +1013,24 @@
       NF.store.saveNow();
     });
 
+    // 分享副本：粘贴到窗口空白处即收下（粘在输入框里的照常当文字处理）
+    document.addEventListener('paste', function (e) {
+      var t = e.target;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+      var cb = e.clipboardData || window.clipboardData;
+      var text = cb && cb.getData ? cb.getData('text') : '';
+      if (!NF.share.parse(text)) return;
+      e.preventDefault();
+      acceptShare(text);
+    });
+
+    // 或者直接改地址栏的 #（真浏览器里把链接的 host 换成本地地址即可）
+    window.addEventListener('hashchange', function () {
+      var payload = readShareHash();
+      if (!payload) return;
+      acceptShare(payload).then(function (ok) { if (ok) clearShareHash(); });
+    });
+
     // 浏览器外框：双击标签栏＝最大化 / 还原；Windows 的最大化按钮同效
     $('tabbar').addEventListener('dblclick', function (e) {
       if (e.target.closest('.chrome-tab') || e.target.closest('.win-ctl')) return;
@@ -981,6 +1087,20 @@
   function boot() {
     NF.chat.ensure();
 
+    // 地址栏带副本进来：先把它解出来再进入装配，
+    // 否则会先渲染本地那本书、再闪一下换成别人的。
+    var incoming = readShareHash();
+    if (incoming) {
+      acceptShare(incoming, { quiet: true, noMount: true }).then(function (took) {
+        if (took) clearShareHash();
+        startUp();
+      });
+      return;
+    }
+    startUp();
+  }
+
+  function startUp() {
     var title = state.novel.title || NF.data.sampleNovel.title;
     // 上次读的是 EPUB：章节直接回填，不必再解一遍压缩包
     if (state.novel.chapters && state.novel.chapters.length) {
