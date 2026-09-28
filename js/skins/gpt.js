@@ -45,8 +45,8 @@
             '<nav class="gpt-hist">' + buildHistory(api) + '</nav>' +
             '<div class="gpt-side-foot">' +
               '<button class="gpt-user" type="button" title="设置">' +
-                '<span class="gpt-avatar">摸</span>' +
-                '<span>摸鱼的人</span>' +
+                '<span class="gpt-avatar"></span>' +
+                '<span class="gpt-user-name"></span>' +
               '</button>' +
             '</div>' +
           '</aside>' +
@@ -84,6 +84,24 @@
       var currentMeta = null;
 
       function refreshHistory() { histEl.innerHTML = buildHistory(api); }
+
+      /* 左下角账户行跟随浏览器资料（设置 → 外观 可改），不写死名字 */
+      function syncAccount() {
+        var b = api.browserProfile();
+        var av = root.querySelector('.gpt-avatar');
+        var nm = root.querySelector('.gpt-user-name');
+        if (!av || !nm) return;
+        if (b.avatar) {
+          av.classList.add('has-img');
+          av.innerHTML = '<img alt="" src="' + esc(b.avatar) + '">';
+          av.style.background = 'transparent';
+        } else {
+          av.classList.remove('has-img');
+          av.textContent = (String(b.name || '?').trim().charAt(0)) || '?';
+          av.style.background = b.avatarColor || '#0d0d0d';
+        }
+        nm.textContent = b.name;
+      }
 
       function userNode(text) {
         return '<div class="gpt-msg gpt-user-msg"><div class="gpt-bubble">' + esc(text) + '</div></div>';
@@ -213,13 +231,15 @@
       });
 
       var offConv = api.on('conv', refreshHistory);
+      var offProfile = api.on('browser-profile', syncAccount);
 
+      syncAccount();
       rebuild(false);
       if (api.firstRun('novel-hint')) api.toast('小说在「已深度思考」里 · Esc 一键收起');
 
       CLEANUP = [function () {
         root.removeEventListener('click', onRootClick);
-        offPanic(); offProgress(); offConv();
+        offPanic(); offProgress(); offConv(); offProfile();
       }];
     },
 

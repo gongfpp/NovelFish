@@ -90,6 +90,11 @@
       chapters = autoChunk(chapters[0].paras);
     }
 
+    return finish(title, chapters);
+  }
+
+  /** 两套解析（纯文本 / EPUB）共用的收尾 */
+  function finish(title, chapters) {
     doc.title = title || '未命名';
     doc.chapters = chapters;
     doc.totalChars = chapters.reduce(function (a, c) {
@@ -98,6 +103,25 @@
 
     NF.bus.emit('doc', doc);
     return doc;
+  }
+
+  /**
+   * 用已经切好的章节装载正文。EPUB 走这条：
+   * 章节名直接来自书的目录（nav / NCX），比拿正则从纯文本里猜准得多。
+   * @param {Array<{title?: string, paras: string[]}>} chapters
+   */
+  function parseChapters(chapters, title) {
+    var list = (chapters || []).map(function (c) {
+      var paras = ((c && c.paras) || [])
+        .map(function (p) {
+          return String(p == null ? '' : p).replace(/[\t\u3000]+/g, ' ').trim();
+        })
+        .filter(function (p) { return p.length > 0; });
+      return { title: String((c && c.title) || '').trim() || '未命名', paras: paras };
+    }).filter(function (c) { return c.paras.length > 0; });
+
+    if (!list.length) list = [{ title: '正文', paras: ['（空文档）'] }];
+    return finish(title, list);
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -357,6 +381,7 @@
   NF.novel = {
     get doc() { return doc; },
     parse: parse,
+    parseChapters: parseChapters,
     chapterHtml: chapterHtml,
     chapterChars: chapterChars,
     chapterCount: function () { return doc.chapters.length; },
