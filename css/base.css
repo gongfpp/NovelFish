@@ -135,6 +135,54 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .text-input::placeholder { color: var(--c-text-3); }
 .text-input:focus { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-weak); }
 
+/* 外观页里的头像 / 标签页图标预览 */
+.avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.avatar-row .text-input { margin-top: 0; }
+.avatar-preview {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #4d6bfe;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06);
+}
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-preview--tab {
+  border-radius: 5px;
+  background: #fff;
+  color: var(--c-text-2);
+}
+input[type="color"] {
+  width: 40px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-s);
+  background: #fff;
+  cursor: pointer;
+}
+/* 藏起来但保留可点击盒子：1x1 不参与布局，也不影响可访问性 */
+.visually-hidden {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
 input[type="range"] {
   width: 100%;
   appearance: none;

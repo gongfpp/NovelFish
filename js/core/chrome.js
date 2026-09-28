@@ -18,8 +18,9 @@
     edge: { 'omni.site': 'omni.lock' }
   };
 
-  var deps = null;     // { state, patch, toast, toggleFullscreen }
-  var openPop = null;  // 当前展开的面板元素
+  var deps = null;       // { state, patch, toast, toggleFullscreen }
+  var openPop = null;    // 当前展开的面板元素
+  var openFlyout = null; // 缩放的二级菜单
 
   function icons() {
     return NF.data.browserIcons[isEdge() ? 'edge' : 'chrome'];
@@ -53,6 +54,25 @@
   }
 
   function esc(s) { return NF.util.escapeHtml(s); }
+
+  /** 资料头像：优先用自定义图片，否则「首字母 + 底色」，和真实 Chrome 的资料按钮一致 */
+  function avatarInner(p) {
+    if (p.avatar) return '<img alt="" src="' + esc(p.avatar) + '">';
+    return esc((String(p.name || '?').trim().charAt(0)) || '?');
+  }
+
+  function paintAvatar(el, p, withTitle) {
+    if (p.avatar) {
+      el.classList.add('has-img');
+      el.innerHTML = avatarInner(p);
+      el.style.background = 'transparent';
+    } else {
+      el.classList.remove('has-img');
+      el.textContent = avatarInner(p);
+      el.style.background = p.avatarColor || '#4d6bfe';
+    }
+    if (withTitle) el.title = (isEdge() ? '个人资料：' : 'Google 账号：') + p.name;
+  }
 
   /* ============================================================
      图标注入
@@ -121,11 +141,12 @@
   /** 个人资料 */
   function avatarPanelHtml() {
     var p = deps.state().browser;
-    var initial = (p.name || '?').trim().charAt(0) || '?';
     var edge = isEdge();
+    var avStyle = p.avatar ? '' : ' style="background:' + esc(p.avatarColor || '#4d6bfe') + '"';
     return '' +
       '<div class="pop-profile">' +
-        '<span class="pop-profile-avatar">' + esc(initial) + '</span>' +
+        '<span class="pop-profile-avatar' + (p.avatar ? ' has-img' : '') + '"' + avStyle + '>' +
+          avatarInner(p) + '</span>' +
         '<span class="pop-profile-meta">' +
           '<span class="pop-profile-name">' + esc(p.name) + '</span>' +
           '<span class="pop-profile-mail">' + esc(p.email) + '</span>' +
@@ -134,13 +155,16 @@
         '</span>' +
       '</div>' +
       '<div class="pop-profile-btns">' +
-        '<button class="pop-btn" type="button">' + (edge ? '管理个人资料' : '自定义个人资料') + '</button>' +
-        '<button class="pop-btn" type="button">添加个人资料</button>' +
+        '<button class="pop-btn" type="button" data-menu="profile-edit">' +
+          (edge ? '管理个人资料' : '自定义个人资料') + '</button>' +
+        '<button class="pop-btn" type="button" data-menu="profile-switch">添加个人资料</button>' +
       '</div>' +
       '<div class="pop-sep"></div>' +
-      '<button class="pop-item" type="button"><span class="pop-ico">' + pick('rows.person') + '</span>' +
+      '<button class="pop-item" type="button" data-menu="profile-manage">' +
+        '<span class="pop-ico">' + pick('rows.person') + '</span>' +
         '<span class="pop-label">' + (edge ? '管理 Microsoft 账户' : '管理您的 Google 账号') + '</span></button>' +
-      '<button class="pop-item" type="button"><span class="pop-ico">' + pick('rows.exit') + '</span>' +
+      '<button class="pop-item" type="button" data-menu="profile-signout">' +
+        '<span class="pop-ico">' + pick('rows.exit') + '</span>' +
         '<span class="pop-label">' + (edge ? '退出登录' : '退出') + '</span></button>';
   }
 
@@ -170,6 +194,7 @@
     var had = !!openPop;
     Object.keys(PANELS).forEach(function (k) { $(PANELS[k].el).hidden = true; });
     openPop = null;
+    closeFlyout();
     Array.prototype.forEach.call(document.querySelectorAll('.chrome-toolbar .is-pressed'), function (el) {
       el.classList.remove('is-pressed');
     });
@@ -210,12 +235,12 @@
       }
       var mi = e.target.closest('[data-menuitem]');
       if (mi) {
-        var label = mi.dataset.menuitem;
-        closePopovers();
-        // 「设置」直接映射到本应用的控制台，点进去不会露馅
-        if (label === '设置' || label === 'Preferences') {
-          NF.bus.emit('open-console');
-        }
+        runMenuAction(mi.dataset.menuitem, mi);
+        return;
+      }
+      var named = e.target.closest('[data-menu]');
+      if (named) {
+        runNamedAction(named.dataset.menu);
         return;
       }
       if (e.target.closest('.pop-item') || e.target.closest('.pop-btn') || e.target.closest('.pop-link')) {
@@ -274,6 +299,166 @@
     closePopovers();
   }
 
+  /* ============================================================
+     主菜单里需要真行为的几项
+     ============================================================ */
+
+  function zoomPct() { return Math.round((deps.state().ui.zoom || 1) * 100); }
+
+  function zoomFlyoutHtml() {
+    var pct = zoomPct();
+    return '' +
+      '<div class="pop-zoom">' +
+        '<button class="pop-zoom-btn" type="button" data-zoom="-1" title="缩小">' +
+          '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 8h10" stroke="currentColor" ' +
+          'stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>' +
+        '<span class="pop-zoom-val">' + pct + '%</span>' +
+        '<button class="pop-zoom-btn" type="button" data-zoom="1" title="放大">' +
+          '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 8h10M8 3v10" stroke="currentColor" ' +
+          'stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>' +
+      '</div>' +
+      '<div class="pop-zoom-full" data-zoom="full">' +
+        '<span>全屏</span><span class="pop-key">' + fmtKey('mod+shift+F') + '</span>' +
+      '</div>';
+  }
+
+  function openZoomFlyout(row) {
+    var menu = $('popMenu');
+    var el = $('popFlyout');
+    el.innerHTML = zoomFlyoutHtml();
+    el.hidden = false;
+    el.style.top = (menu.offsetTop + row.offsetTop) + 'px';
+    openFlyout = el;
+  }
+
+  function closeFlyout() {
+    var el = $('popFlyout');
+    if (el) el.hidden = true;
+    openFlyout = null;
+  }
+
+  function stepZoom(dir) {
+    var next = NF.api.setZoom(zoomPct() / 100 + dir * 0.1);
+    var val = $('popFlyout').querySelector('.pop-zoom-val');
+    if (val) val.textContent = Math.round(next * 100) + '%';
+  }
+
+  /** 主菜单项 → 真实行为；没实现的就折叠收起（真实浏览器里是二级菜单） */
+  function runMenuAction(label, row) {
+    if (label === '缩放') { openZoomFlyout(row); return; }
+
+    closePopovers();
+    if (/查找/.test(label)) { openFind(); return; }
+    if (label === '新建标签页' || label === '新建窗口') {
+      window.open(location.href, '_blank', 'noopener');
+      return;
+    }
+    if (/隐身窗口|InPrivate/.test(label)) {
+      window.open(location.href, '_blank', 'noopener,width=1180,height=780');
+      return;
+    }
+    if (/打印|Print/.test(label)) { window.print(); return; }
+    if (/删除浏览数据/.test(label)) { clearBrowsingData(); return; }
+    if (label === '设置') { NF.bus.emit('open-console'); return; }
+  }
+
+  /** 个人资料面板 / 扩展面板里的按钮 */
+  function runNamedAction(name) {
+    closePopovers();
+    if (name === 'profile-edit') NF.bus.emit('open-console', 'look');
+  }
+
+  /** 「删除浏览数据…」：清掉伪装出来的浏览记录（会话列表）+ 地址栏书签态 */
+  function clearBrowsingData() {
+    NF.chat.reset();
+    var star = document.querySelector('.omni-star');
+    if (star) {
+      star.dataset.on = '0';
+      star.innerHTML = pick('omni.star');
+      star.title = '为此标签页添加书签';
+    }
+    if (NF.toast) NF.toast('已清除 chat.deepseek.com 的浏览数据');
+  }
+
+  /* ============================================================
+     页内查找（⌘F / 主菜单「查找…」）
+     Chrome 的查找条贴在内容区右上角，Enter 找下一个、Esc 关闭。
+     ============================================================ */
+  function findTerm() { return ($('findInput').value || '').trim(); }
+
+  /** 用选区数一遍匹配数，顺便把视口滚到第一个匹配 */
+  function runFind(term, forward) {
+    if (!term) return false;
+    if (typeof window.find !== 'function') return false;
+    // window.find(str, caseSensitive, backwards, wrapAround, wholeWord, searchInFrames, showDialog)
+    return window.find(term, false, !forward, true, false, false, false);
+  }
+
+  function countMatches(term) {
+    if (!term) return 0;
+    var root = $('skinRoot');
+    var text = root ? (root.innerText || '') : '';
+    var n = 0, i = 0, lower = text.toLowerCase(), t = term.toLowerCase();
+    while ((i = lower.indexOf(t, i)) !== -1) { n++; i += t.length; }
+    return n;
+  }
+
+  function syncFindCount() {
+    var term = findTerm();
+    var box = $('findCount');
+    if (!term) { box.textContent = '0/0'; box.classList.remove('is-empty'); return; }
+    var n = countMatches(term);
+    box.textContent = n ? ('1/' + n) : '0/0';
+    box.classList.toggle('is-empty', n === 0);
+  }
+
+  function openFind() {
+    var bar = $('findBar');
+    bar.hidden = false;
+    var inp = $('findInput');
+    inp.focus();
+    inp.select();
+    syncFindCount();
+  }
+
+  function closeFind() {
+    var bar = $('findBar');
+    if (!bar.hidden) {
+      bar.hidden = true;
+      var sel = window.getSelection && window.getSelection();
+      if (sel && sel.removeAllRanges) sel.removeAllRanges();
+    }
+  }
+
+  function findStep(forward) {
+    var term = findTerm();
+    if (!term) return;
+    if (!runFind(term, forward)) NF.toast('找不到「' + term + '」');
+    syncFindCount();
+  }
+
+  function initFind() {
+    var bar = $('findBar');
+    var inp = $('findInput');
+    inp.addEventListener('input', function () {
+      if (findTerm()) runFind(findTerm(), true);
+      syncFindCount();
+    });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault(); e.stopPropagation();
+        findStep(!e.shiftKey);
+      } else if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation();
+        closeFind();
+      }
+    });
+    $('findNext').addEventListener('click', function () { findStep(true); });
+    $('findPrev').addEventListener('click', function () { findStep(false); });
+    $('findClose').addEventListener('click', function () { closeFind(); });
+    bar.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+  }
+
   function init(d) {
     deps = d;
     var toolbar = $('toolbar');
@@ -283,7 +468,27 @@
     document.addEventListener('mousedown', function (e) {
       if (!openPop) return;
       if (e.target.closest('.chrome-pop') || e.target.closest('[data-pop]')) return;
+      if (e.target.closest('.chrome-find')) return;
       closePopovers();
+    });
+
+    // 主菜单之外的弹层（缩放子菜单）
+    document.addEventListener('mousedown', function (e) {
+      if (!openFlyout) return;
+      if (e.target.closest('.chrome-pop')) return;
+      closeFlyout();
+    });
+    document.addEventListener('click', function (e) {
+      var z = e.target.closest('[data-zoom]');
+      if (!z) return;
+      var v = z.dataset.zoom;
+      if (v === 'full') { closePopovers(); NF.api.toggleFullscreen(); return; }
+      stepZoom(Number(v));   // 保持二级菜单展开，和真 Chrome 一样
+    });
+
+    initFind();
+    NF.bus.on('find', function () {
+      if ($('findBar').hidden) openFind(); else closeFind();
     });
 
     apply();
@@ -299,16 +504,15 @@
     app.dataset.browser = s.mask.browser === 'edge' ? 'edge' : 'chrome';
     applyIcons();
     applyProfile();
+    closeFind();
     if (openPop) closePopovers();   // 切换浏览器 / 系统后旧面板内容作废
   }
 
   function applyProfile() {
     if (!deps) return;
     var p = deps.state().browser;
-    var initial = (p.name || '?').trim().charAt(0) || '?';
     Array.prototype.forEach.call(document.querySelectorAll('.chrome-avatar'), function (el) {
-      el.textContent = initial;
-      el.title = (isEdge() ? '个人资料：' : 'Google 账号：') + p.name;
+      paintAvatar(el, p, true);
     });
   }
 
@@ -317,8 +521,12 @@
     apply: apply,
     applyProfile: applyProfile,
     closePopovers: closePopovers,
-    /** 供核心判断 Esc 是否被面板吃掉 */
-    anyOpen: function () { return !!openPop; },
+    closeFind: function () { closeFind(); },
+    openFind: function () { openFind(); },
+    /** 供核心判断 Esc 是否被外框吃掉 */
+    anyOpen: function () {
+      return !!openPop || !!openFlyout || !$('findBar').hidden;
+    },
     /** 测试与调试用 */
     _popoverOf: popoverOf
   };

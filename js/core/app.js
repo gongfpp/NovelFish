@@ -11,6 +11,7 @@
   var state = NF.store.load();   // 先读本地状态，再装配控制器
 
   var activeSkin = null;
+  var activeShell = {};        // 当前皮肤的 shell（地址栏 / 标签页 / 图标）
   var feeds = [];
   var activeFeed = null;
 
@@ -77,13 +78,11 @@
       return true;
     },
 
-    /* --- 侧边栏 / 净读 / 外框 --- */
+    /* --- 侧边栏 / 外框 --- */
     sidebarQuery: function () { return state.sidebar.query || ''; },
     setSidebarQuery: function (v) { NF.store.patch({ sidebar: { query: String(v || '') } }); },
     isSidebarOpen: function () { return !!state.sidebar.open; },
     setSidebar: function (v) { NF.store.patch({ sidebar: { open: !!v } }); },
-    isReadOnly: function () { return !!state.mask.readOnly; },
-    setReadOnly: function (v) { NF.store.patch({ mask: { readOnly: !!v } }); },
     setWebSearch: function (v) { NF.store.patch({ mask: { webSearch: !!v } }); },
     setOpenThinking: function (v) { NF.store.patch({ mask: { openThinking: !!v } }); },
     setOs: function (os) {
@@ -93,6 +92,42 @@
     setBrowser: function (b) {
       NF.store.patch({ mask: { browser: b === 'edge' ? 'edge' : 'chrome' } });
       applyShell(); syncLookUI();
+    },
+
+    /* --- 浏览器资料 / 标签页 --- */
+    browserProfile: function () { return state.browser; },
+    setBrowserProfile: function (key, value) {
+      if (!(key in state.browser)) return;
+      state.browser[key] = value;
+      NF.store.save();
+      if (NF.chromeFrame) NF.chromeFrame.applyProfile();
+      if (key === 'tabTitle') refreshTabTitle();
+      NF.bus.emit('browser-profile', state.browser);
+    },
+
+    /* --- 浏览器缩放 / 页内查找 --- */
+    zoom: function () { return Number(state.ui.zoom) || 1; },
+    setZoom: function (z) { return setZoom(z); },
+    openFind: function () { NF.bus.emit('find'); },
+
+    /* --- 消息操作条 --- */
+    rollAnswer: function (i) { return NF.chat.rollAnswer(i); },
+    vote: function (i, v) { return NF.chat.vote(i, v); },
+
+    /* --- 控制台 --- */
+    openConsole: function (v, pane) { openConsole(v, pane); },
+    toggleFullscreen: function () { toggleFullscreen(); },
+
+    /**
+     * 一次性提示：同一个 key 只在第一次返回 true（标记落盘）。
+     * 皮肤用它做首启引导，避免每次打开都弹「小说在深度思考里」这类露出破绽的提示。
+     */
+    firstRun: function (key) {
+      state.seen = state.seen || {};
+      if (state.seen[key]) return false;
+      state.seen[key] = true;
+      NF.store.save();
+      return true;
     },
 
     isPanic: function () { return panic; },
@@ -144,7 +179,23 @@
     app.dataset.shell = state.mask.chrome ? 'chrome' : 'bare';
     app.dataset.os = state.mask.os === 'win' ? 'win' : 'mac';
     app.dataset.browser = state.mask.browser === 'edge' ? 'edge' : 'chrome';
+    applyZoom();
     if (NF.chromeFrame) NF.chromeFrame.apply();
+  }
+
+  /** 浏览器缩放：作用于视口，和真 Chrome 的 Ctrl+/- 一致 */
+  function applyZoom() {
+    var vp = $('skinRoot');
+    if (!vp) return;
+    var z = Number(state.ui && state.ui.zoom) || 1;
+    vp.style.zoom = z === 1 ? '' : String(z);
+  }
+
+  function setZoom(z) {
+    var next = U.clamp(Math.round(z * 10) / 10, 0.5, 2);
+    NF.store.patch({ ui: { zoom: next } });
+    applyZoom();
+    return next;
   }
 
   /* ============================================================
@@ -210,16 +261,38 @@
   /* ============================================================
      皮肤装载
      ============================================================ */
+  /**
+   * 皮肤给的 favicon 有两种写法：内联 <svg> 标记，或已经是 data URI。
+   * 统一成 data URI，才能同时喂给 <img> 和真实浏览器标签页的 <link rel="icon">。
+   */
+  function faviconUri(fav) {
+    if (!fav) return '';
+    if (/^data:/i.test(fav)) return fav;
+    return 'data:image/svg+xml,' + encodeURIComponent(String(fav).trim());
+  }
+
   function applyShellMeta(shell) {
-    shell = shell || {};
-    var url = shell.url || 'chat.deepseek.com';
-    var title = shell.title || '新标签页';
+    activeShell = shell || {};
+    var url = activeShell.url || 'chat.deepseek.com';
+    // 标签页标题：用户自定义优先，留空则跟随皮肤
+    var custom = (state.browser && state.browser.tabTitle || '').trim();
+    var title = custom || activeShell.title || '新标签页';
     $('omniUrl').textContent = url;
     $('tabTitle').textContent = title;
     document.title = title;
-    var fav = $('tabFavicon');
-    if (shell.favicon) fav.innerHTML = shell.favicon;
-    else fav.innerHTML = '';
+
+    var uri = faviconUri(activeShell.favicon);
+    $('tabFavicon').innerHTML = uri ? '<img alt="" src="' + uri + '">' : '';
+    // 真实浏览器标签页上的图标也跟着皮肤走
+    var pageFav = $('pageFavicon');
+    if (pageFav) pageFav.href = uri || 'data:,';
+
+    if (typeof syncFaviconPreview === 'function') syncFaviconPreview();
+  }
+
+  /** 只刷新标签页标题 / 图标，不重挂皮肤 */
+  function refreshTabTitle() {
+    applyShellMeta(activeShell);
   }
 
   function mountSkin(id, opts) {
@@ -324,14 +397,25 @@
   /* ============================================================
      控制台
      ============================================================ */
-  function openConsole(v) {
-    var open = arguments.length ? v : $('console').hidden;
+  function openConsole(v, pane) {
+    var open = typeof v === 'boolean' ? v : $('console').hidden;
     $('console').hidden = !open;
     $('scrim').hidden = !open;
     if (open) {
+      if (pane) showPane(pane);
       syncConsoleProgress();
       syncMaskUI();
     }
+  }
+
+  /** 切到控制台的某一页（书架 / 阅读 / 皮肤 / 伪装 / 外观 / 帮助） */
+  function showPane(name) {
+    Array.prototype.forEach.call($('consoleTabs').children, function (b) {
+      b.classList.toggle('is-active', b.dataset.tab === name);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.cpane'), function (p) {
+      p.classList.toggle('is-active', p.dataset.pane === name);
+    });
   }
 
   function syncBookMeta() {
@@ -420,13 +504,15 @@
     var rows = [
       [k('Esc'), '老板键：收起 / 展开「深度思考」，视野回到伪装回答'],
       [k(mod) + ' + ' + k('B'), '打开 / 收起左侧的聊天记录与对话列表'],
-      [k('\\'), '净读：一键折叠对话双方正文，只留思考框里的正文'],
       [k('空格') + ' / ' + k('J'), '向下翻一屏'],
       [k('Shift') + ' + ' + k('空格') + ' / ' + k('K'), '向上翻一屏'],
       [k('&larr;') + ' / ' + k('&rarr;'), '上一章 / 下一章'],
       [k('A'), '自动滚动开关'],
       [k('+') + ' / ' + k('-'), '字号增减'],
       [k(mod) + ' + ' + k(','), '打开控制台（伪装成设置面板）'],
+      [k(mod) + ' + ' + k('F'), '页内查找'],
+      [k(mod) + ' + ' + k('+') + ' / ' + k('-') + ' / ' + k('0'), '浏览器缩放'],
+      [k(mod) + ' + ' + k('T'), '新标签页'],
       [k('T'), '隐藏 / 显示浏览器外框'],
       [k('F'), '真全屏（Windows 外框的「最大化」按钮同效）']
     ];
@@ -439,7 +525,6 @@
   function syncMaskUI() {
     $('swBlur').setAttribute('aria-checked', String(!!state.mask.blurCollapse));
     $('swOpen').setAttribute('aria-checked', String(!!state.mask.openThinking));
-    $('swReadOnly').setAttribute('aria-checked', String(!!state.mask.readOnly));
     $('swChrome').setAttribute('aria-checked', String(!!state.mask.chrome));
     syncLookUI();
   }
@@ -454,6 +539,30 @@
     });
     $('inpProfileName').value = state.browser.name;
     $('inpProfileEmail').value = state.browser.email;
+    $('inpTabTitle').value = state.browser.tabTitle || '';
+    $('inpAvatarColor').value = state.browser.avatarColor || '#4d6bfe';
+    syncAvatarPreview();
+    syncFaviconPreview();
+  }
+
+  function syncAvatarPreview() {
+    var el = $('avatarPreview');
+    if (!el) return;
+    var b = state.browser;
+    if (b.avatar) {
+      el.style.background = 'transparent';
+      el.innerHTML = '<img alt="" src="' + NF.util.escapeHtml(b.avatar) + '">';
+    } else {
+      el.style.background = b.avatarColor || '#4d6bfe';
+      el.textContent = (String(b.name || '?').trim().charAt(0)) || '?';
+    }
+  }
+
+  function syncFaviconPreview() {
+    var el = $('faviconPreview');
+    if (!el) return;
+    var uri = faviconUri(activeShell.favicon);
+    el.innerHTML = uri ? '<img alt="" src="' + uri + '">' : '';
   }
 
   function bindConsole() {
@@ -461,10 +570,7 @@
     $('consoleTabs').addEventListener('click', function (e) {
       var btn = e.target.closest('.ctab');
       if (!btn) return;
-      Array.prototype.forEach.call(this.children, function (b) { b.classList.toggle('is-active', b === btn); });
-      Array.prototype.forEach.call(document.querySelectorAll('.cpane'), function (p) {
-        p.classList.toggle('is-active', p.dataset.pane === btn.dataset.tab);
-      });
+      showPane(btn.dataset.tab);
     });
 
     $('consoleClose').addEventListener('click', function () { openConsole(false); });
@@ -542,7 +648,6 @@
     bindSwitch('swOpen', 'openThinking', 'mask', function () {
       mountSkin(state.skin, { remount: true, silent: true });
     });
-    bindSwitch('swReadOnly', 'readOnly', 'mask');
     bindSwitch('swChrome', 'chrome', 'mask', applyShell);
 
     // 外框系统 / 浏览器
@@ -559,16 +664,38 @@
       NF.toast(btn.dataset.browser === 'edge' ? '外框已切换为 Edge' : '外框已切换为 Chrome');
     });
 
-    // 浏览器资料（地址栏右侧头像与资料面板）
-    function bindProfile(id, key) {
+    // 浏览器资料：名称 / 邮箱 / 标签页标题 / 头像
+    function bindProfile(id, key, after) {
       $(id).addEventListener('input', function () {
-        state.browser[key] = this.value;
-        NF.store.save();
-        if (NF.chromeFrame) NF.chromeFrame.applyProfile();
+        api.setBrowserProfile(key, this.value);
+        if (after) after();
       });
     }
-    bindProfile('inpProfileName', 'name');
+    bindProfile('inpProfileName', 'name', syncAvatarPreview);
     bindProfile('inpProfileEmail', 'email');
+    bindProfile('inpTabTitle', 'tabTitle', refreshTabTitle);
+    bindProfile('inpAvatarColor', 'avatarColor', syncAvatarPreview);
+    $('btnAvatarPick').addEventListener('click', function () { $('avatarFile').click(); });
+
+    // 头像图片：读成 dataURL 存进本地状态
+    $('avatarFile').addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      if (!/^image\//.test(f.type)) { NF.toast('请选择图片文件'); return; }
+      var rd = new FileReader();
+      rd.onload = function () {
+        api.setBrowserProfile('avatar', String(rd.result));
+        syncAvatarPreview();
+        NF.toast('头像已更新');
+      };
+      rd.readAsDataURL(f);
+    });
+    $('btnAvatarClear').addEventListener('click', function () {
+      api.setBrowserProfile('avatar', '');
+      syncAvatarPreview();
+      NF.toast('已恢复为首字母头像');
+    });
 
     // 皮肤
     $('skinGrid').addEventListener('click', function (e) {
@@ -610,9 +737,10 @@
       var inField = t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
 
       if (e.key === 'Escape') {
-        // 浏览器外框的弹出面板优先吃掉 Esc（和真浏览器一致）
+        // 浏览器外框的弹出面板 / 页内查找优先吃掉 Esc（和真浏览器一致）
         if (NF.chromeFrame && NF.chromeFrame.anyOpen()) {
           NF.chromeFrame.closePopovers();
+          NF.chromeFrame.closeFind();
           return;
         }
         if (!$('console').hidden) { openConsole(false); return; }
@@ -637,6 +765,37 @@
         return;
       }
 
+      // 浏览器级快捷键：缩放 / 查找 / 新标签页（和真 Chrome 同键位）
+      if (e.metaKey || e.ctrlKey) {
+        var mk = e.key;
+        if (mk === '=' || mk === '+') {
+          e.preventDefault();
+          NF.toast('缩放 ' + Math.round(setZoom((state.ui.zoom || 1) + 0.1) * 100) + '%');
+          return;
+        }
+        if (mk === '-' || mk === '_') {
+          e.preventDefault();
+          NF.toast('缩放 ' + Math.round(setZoom((state.ui.zoom || 1) - 0.1) * 100) + '%');
+          return;
+        }
+        if (mk === '0') {
+          e.preventDefault();
+          setZoom(1);
+          NF.toast('缩放 100%');
+          return;
+        }
+        if (mk === 'f' || mk === 'F') {
+          e.preventDefault();
+          NF.bus.emit('find');
+          return;
+        }
+        if (mk === 't' || mk === 'T') {
+          e.preventDefault();
+          window.open(location.href, '_blank', 'noopener');
+          return;
+        }
+      }
+
       if (inField || e.metaKey || e.ctrlKey || e.altKey) return;
 
       var el = activeFeed && activeFeed.scrollEl;
@@ -655,13 +814,6 @@
           e.preventDefault(); api.nextChapter(); syncConsoleProgress(); break;
         case 'ArrowLeft':
           e.preventDefault(); api.prevChapter(); syncConsoleProgress(); break;
-        case '\\': {
-          e.preventDefault();
-          var ro = !api.isReadOnly();
-          api.setReadOnly(ro);
-          NF.toast(ro ? '净读：已折叠对话正文' : '已恢复显示对话正文');
-          break;
-        }
         case 'a': case 'A': {
           var v = !state.reading.auto;
           NF.store.patch({ reading: { auto: v } });
@@ -803,7 +955,7 @@
       toast: NF.toast
     });
 
-    NF.bus.on('open-console', function () { openConsole(true); });
+    NF.bus.on('open-console', function (pane) { openConsole(true, pane); });
 
     mountSkin(state.skin || 'deepseek', { silent: true }).then(function () {
       document.body.classList.remove('boot');

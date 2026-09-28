@@ -13,7 +13,7 @@
        shell: {                            // 供浏览器外框使用
          url:   'chat.deepseek.com',       // 地址栏文本
          title: 'DeepSeek - 探索未至之境',  // 标签页标题
-         favicon: '<svg .../>'             // 内联 SVG 字符串（可空）
+         favicon: '<svg .../>'             // 内联 SVG 标记，或 data: URI（可空）
        },
        mount(rootEl, api) { ... },         // 必填：把皮肤渲染进 rootEl
        unmount() { ... },                  // 选填：切走时清理
@@ -52,18 +52,29 @@
 
      伪装 / 外框
        api.mask                    伪装参数 { script, blurCollapse, openThinking,
-                                                 chrome, os, webSearch, readOnly }
-       api.isReadOnly() / setReadOnly(v)
-                                   净读模式：折叠对话双方正文
+                                                 chrome, os, webSearch }
        api.isSidebarOpen() / setSidebar(v)
        api.sidebarQuery() / setSidebarQuery(v)
                                    侧边栏搜索词
        api.setOs('mac' | 'win')    切换浏览器外框版本
        api.setOpenThinking(v) / setWebSearch(v)
 
+     浏览器资料（地址栏右侧的头像按钮与资料面板）
+       api.browserProfile()        { name, email, avatar, avatarColor, tabTitle }
+       api.setBrowserProfile(k, v) 改一项；会自动刷新外框并广播 'browser-profile'
+
+     消息操作
+       api.rollAnswer(i)           第 i 组问答换一条同剧本的其它回答，返回新条目
+       api.vote(i, v)              v = 1 赞 / -1 踩 / 再点一次取消，返回当前值
+
+     浏览器行为
+       api.zoom() / setZoom(z)     视口缩放（0.5 - 2）
+       api.openFind()              调出页内查找条
+
      其它
        api.on(evt, fn)             订阅：'reading' | 'progress' | 'mask' | 'panic'
                                          | 'conv' | 'thread-reload' | 'sidebar'
+                                         | 'browser-profile' | 'find'
        api.isPanic()               当前是否处于老板键隐藏态
        api.toast(msg)              提示
        api.registerFeed(feed)      把当前 feed 交给核心托管（自动滚动 / 全局跳章要用）

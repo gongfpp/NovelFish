@@ -121,9 +121,10 @@ window.NovelFish = window.NovelFish || {};
   /* ---------------- 默认状态 ---------------- */
   function defaultState() {
     return {
-      version: 2,
+      version: 4,
       skin: 'deepseek',
-      reading: { font: 14, line: 1.9, width: 780, auto: false, speed: 1 },
+      /* 正文默认排版对齐 DeepSeek 官网「深度思考」的规格：14px / 行距 1.7（=24px）/ 栏宽 840px */
+      reading: { font: 14, line: 1.7, width: 840, auto: false, speed: 1 },
       mask: {
         script: 'auto',        // 伪装剧本 id，'auto' 为混合轮换
         blurCollapse: true,    // 窗口失焦自动收起
@@ -131,16 +132,26 @@ window.NovelFish = window.NovelFish || {};
         chrome: true,          // 显示浏览器外框
         os: 'mac',             // 外框系统风格：mac | win
         browser: 'chrome',     // 外框浏览器：chrome | edge
-        webSearch: false,      // 输入框里的「智能搜索」开关（纯观感）
-        readOnly: false        // 净读模式：折叠对话双方正文
+        webSearch: false       // 输入框里的「智能搜索」开关
       },
-      /* 浏览器外框里显示的资料（地址栏右侧头像与资料面板） */
-      browser: { name: '摸鱼的人', email: 'moyu.ren@example.com' },
+      /* 浏览器外框里显示的资料：地址栏头像、资料面板、标签页标题 */
+      browser: {
+        name: '摸鱼的人',
+        email: 'moyu.ren@example.com',
+        avatar: '',                     // 自定义头像（dataURL），空则用首字母
+        avatarColor: '#4d6bfe',         // 头像底色
+        tabTitle: ''                    // 空则跟随皮肤自带的标题
+      },
       novel: { title: '', docId: '', text: '' },
       progress: { chapter: 0, loadedThrough: 0, scrollTop: 0, feedOffset: null },
       /* 会话列表：见 js/core/chat.js */
       chat: { activeId: '', seq: 0, convs: [] },
-      sidebar: { open: true, query: '' }
+      sidebar: { open: true, query: '' },
+      /* 浏览器行为：缩放倍率、书签（地址栏星标点出来的） */
+      ui: { zoom: 1 },
+      bookmarks: [],
+      /* 一次性提示的去重标记：同 key 只提示一次，避免每次打开都冒小说相关的提示 */
+      seen: {}
     };
   }
 
@@ -192,6 +203,19 @@ window.NovelFish = window.NovelFish || {};
   /* ---------------- 存储 ---------------- */
   var state = defaultState();
 
+  /**
+   * 老存档的顺带修正。只在用户还停在上一个版本的默认值时才动，
+   * 已经自己调过字号 / 行距 / 宽度的一律保留。
+   */
+  function migrate(parsed) {
+    var from = parsed.version || 0;
+    if (from < 4 && state.reading.line === 1.9 && state.reading.width === 780) {
+      state.reading.line = 1.7;
+      state.reading.width = 840;
+    }
+    state.version = defaultState().version;
+  }
+
   function load() {
     var raw = null;
     try { raw = localStorage.getItem(STORAGE_KEY); } catch (e) { /* 隐私模式 */ }
@@ -199,6 +223,7 @@ window.NovelFish = window.NovelFish || {};
     try {
       var parsed = JSON.parse(raw);
       state = deepMerge(defaultState(), parsed);
+      migrate(parsed);
     } catch (e) {
       console.warn('[NovelFish] 本地状态解析失败，已重置', e);
       state = defaultState();
