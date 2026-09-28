@@ -8,7 +8,8 @@
      侧边栏开关 / 对话列表切换与搜索 /
       「深度思考」表头冻结吸顶 / 消息操作条 / 分享弹窗 /
      标签页标题与登录头像自定义 / 主菜单的查找、缩放、删除浏览数据 /
-     模板库 / file:// 可用性 / EPUB 导入（nav 分章、NCX 分章、坏文件兜底）
+     模板库 / file:// 可用性 / EPUB 导入（nav 分章、NCX 分章、坏文件兜底）/
+     分享副本（链接自包含整本书、粘回窗口或地址栏接收、超长书落文件）
    运行：
      cd <项目根> && python3 -m http.server 8931 --bind 127.0.0.1 &
      NODE_PATH=<playwright 所在 node_modules> node tools/smoke.js
@@ -35,6 +36,57 @@ const EPUB_V3 = path.join(__dirname, 'fixtures', 'sample.epub');
 const EPUB_NCX = path.join(__dirname, 'fixtures', 'sample-ncx.epub');
 const FAKE_EPUB = path.join(os.tmpdir(), 'nf-fake-' + process.pid + '.epub');
 fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的文本文件\n');
+
+/* ---------- 分享副本用的三份临时书（跑完就删） ---------- */
+// 小书：书名取自文件名，用来验证「链接把整本书带走」
+const SHARE_TXT = path.join(os.tmpdir(), '潮汐拾遗.txt');
+fs.writeFileSync(SHARE_TXT, [
+  '第一章 灯塔', '',
+  '灯芯第三次熄灭的时候，守塔人把铜壶里的油倒回木桶，重新数了一遍刻度。',
+  '海面翻着白边，雾从东边推上来，把栈桥一节一节吃掉。', '',
+  '第二章 锚地', '',
+  '锚链在水下响了整整一夜，第二天清早，船尾多了一道崭新的划痕。',
+  '没有人承认夜里动过缆绳，也没有人真的睡着。', '',
+  '第三章 信风', '',
+  '信风来的那天，岛上所有的风车都朝同一个方向转，像有人在暗处发了令。',
+  '学徒把观测簿翻到最后一页，发现上一页的字迹被人用指甲刮掉了。'
+].join('\n'), 'utf8');
+
+// 用来在被分享前「换掉正在读的书」，好在收到副本时能看出书确实换回来了
+const OTHER_TXT = path.join(os.tmpdir(), '靠岸记.txt');
+fs.writeFileSync(OTHER_TXT, [
+  '第一章 靠岸', '',
+  '船在雾里靠岸，码头的水泥墩上坐着一个人，手里捏着半截烟。',
+  '他把烟头摁灭在墩子上，说：你来晚了三天。', '',
+  '第二章 交接', '',
+  '钥匙在桌上推过来，铜色，齿口磨圆了。两个人都没有伸手。'
+].join('\n'), 'utf8');
+
+// 百万字级的长篇：真随机中文，压不动，一定超出链接能承载的长度
+const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
+(() => {
+  const POOL = '的一是了我不人在他有这个上们来到时大地为子中你说生国年着就那和要她出也得里后自以会家可下而过天去能对小多然于心学么之都好看起发当没成只如事把还用第样道想作种开美总从无情己面最女但现前些所同日手又行意动方期它头经长儿回位分爱老因很给名法间斯知世什两次使身者被高已亲其进此话常与活正感';
+  let seed = 987654321;
+  const rnd = () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const paras = [];
+  for (let i = 0; i < 24000; i++) {
+    let s = '';
+    const n = 20 + Math.floor(rnd() * 40);
+    for (let k = 0; k < n; k++) s += POOL[Math.floor(rnd() * POOL.length)];
+    paras.push(s + '。');
+  }
+  const lines = [];
+  for (let i = 0; i < paras.length; i += 200) {
+    lines.push('第 ' + (i / 200 + 1) + ' 章', '');
+    for (const p of paras.slice(i, i + 200)) lines.push(p, '');
+  }
+  fs.writeFileSync(BIG_TXT, lines.join('\n'), 'utf8');
+})();
 
 (async () => {
   const errors = [];
@@ -353,7 +405,7 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
     !(await page.locator('.ds-ai-msg').last().locator('.ds-act[data-act="up"]')
       .evaluate(e => e.classList.contains('is-on'))));
 
-  // 分享弹窗
+  // 分享弹窗：外观照官网；此时「深度思考」摊开着，链接里会带上正在读的这本书
   check('顶栏有分享按钮', await page.locator('.ds-share-btn').last().isVisible());
   await page.locator('.ds-share-btn').last().click();
   await page.waitForTimeout(300);
@@ -365,12 +417,29 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   check('分享弹窗默认不显示链接',
     await page.locator('.ds-modal-content .ds-linkbox').last().isHidden());
   await page.locator('.ds-modal-actions .ds-btn--primary').last().click();
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(450);
   check('点「创建链接」后出现分享链接',
     await page.locator('.ds-modal-content .ds-linkbox').last().isVisible());
   const shareUrl = (await page.locator('.ds-modal-content .ds-linkbox span').last().textContent()) || '';
-  check('分享链接是 chat.deepseek.com 的形状',
-    /^https:\/\/chat\.deepseek\.com\/share\/[A-Za-z0-9]{18}$/.test(shareUrl), shareUrl);
+  check('分享链接保持 chat.deepseek.com/share/<18 位> 的形状',
+    /^https:\/\/chat\.deepseek\.com\/share\/[A-Za-z0-9]{18}#nf=1z[A-Za-z0-9_-]+$/.test(shareUrl),
+    shareUrl.slice(0, 56) + '… (' + shareUrl.length + ' 字符)');
+  const sharedBook = await page.evaluate(async (url) => {
+    const doc = NovelFish.api.doc;
+    const book = await NovelFish.share.unpack(NovelFish.share.parse(url));
+    return {
+      title: book && book.title,
+      chapters: book && book.chapters.length,
+      total: doc.chapters.length,
+      sameHead: !!book && book.chapters[0].paras[0] === doc.chapters[0].paras[0],
+      sameTail: !!book && book.chapters[doc.chapters.length - 1].paras.slice(-1)[0] ===
+        doc.chapters[doc.chapters.length - 1].paras.slice(-1)[0]
+    };
+  }, shareUrl);
+  check('链接里的副本就是屏幕上的这本书',
+    sharedBook.title === '长夜拾荒' && sharedBook.chapters === sharedBook.total &&
+    sharedBook.sameHead && sharedBook.sameTail,
+    JSON.stringify(sharedBook));
   check('主按钮变成「复制链接」',
     (await page.locator('.ds-modal-actions .ds-btn--primary').last().textContent()).trim() === '复制链接');
   await shot('03-share');
@@ -1057,6 +1126,135 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
     bad.title + ' / ' + bad.count);
   check('EPUB 解析全程无页面错误', errors.length === 0, errors.join(' | '));
 
+  /* ---------- 23. 分享「深度思考」里的这本小说 ---------- */
+  // 1) 小而完整的书：链接自包含，换台机器也能读
+  await page.locator('#fileInput').setInputFiles(SHARE_TXT);
+  await page.waitForTimeout(1000);
+  check('分享用例的书已载入', (await page.evaluate(() => NovelFish.store.state.novel.title)) === '潮汐拾遗',
+    await page.evaluate(() => NovelFish.store.state.novel.title));
+
+  await page.locator('.ds-share-btn').last().click();
+  await page.waitForTimeout(250);
+  await page.locator('.ds-modal-actions .ds-btn--primary').last().click();
+  await page.waitForTimeout(500);
+  const novelLink = (await page.locator('.ds-modal-content .ds-linkbox span').last().textContent()) || '';
+  const novelPayload = novelLink.split('#nf=')[1] || '';
+  check('小说的链接把整本书带走', /^https:\/\/chat\.deepseek\.com\/share\/[A-Za-z0-9]{18}#nf=1z/.test(novelLink),
+    novelLink.slice(0, 60) + ' (' + novelLink.length + ' 字符)');
+  check('载荷能从链接原样解回来', await page.evaluate(async (u) => {
+    const b = await NovelFish.share.unpack(NovelFish.share.parse(u));
+    return !!b && b.title === '潮汐拾遗' && b.chapters.length === 3 &&
+      b.chapters[2].paras[1].includes('指甲刮掉');
+  }, novelLink));
+  await shot('30-share-novel');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+
+  // 2) 收起「深度思考」时，链接退回官网那张空链接 —— 别的部分不许走样
+  await page.locator('.ds-think-head').last().click();
+  await page.waitForTimeout(600);
+  check('收起后思考框已折叠',
+    await page.locator('.ds-think').last().getAttribute('data-open') === '0');
+  await page.locator('.ds-share-btn').last().click();
+  await page.waitForTimeout(250);
+  await page.locator('.ds-modal-actions .ds-btn--primary').last().click();
+  await page.waitForTimeout(450);
+  const plainLink = (await page.locator('.ds-modal-content .ds-linkbox span').last().textContent()) || '';
+  check('小说不在屏幕上时，链接与官网完全同形',
+    /^https:\/\/chat\.deepseek\.com\/share\/[A-Za-z0-9]{18}$/.test(plainLink), plainLink);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  await page.locator('.ds-think-head').last().click();
+  await page.waitForTimeout(600);
+
+  // 3) 换一本书，再把链接粘回窗口：那本书应该原样回来
+  await page.locator('#fileInput').setInputFiles(OTHER_TXT);
+  await page.waitForTimeout(1000);
+  check('换书成功（书名已变）',
+    (await page.evaluate(() => NovelFish.store.state.novel.title)) === '靠岸记',
+    await page.evaluate(() => NovelFish.store.state.novel.title));
+
+  await page.evaluate((url) => {
+    const dt = new DataTransfer();
+    dt.setData('text', url);
+    document.body.dispatchEvent(new ClipboardEvent('paste', {
+      clipboardData: dt, bubbles: true, cancelable: true
+    }));
+  }, novelLink);
+  await page.waitForTimeout(1200);
+  const pastedBack = await page.evaluate(() => {
+    const thinks = document.querySelectorAll('.ds-think');
+    return {
+      title: NovelFish.store.state.novel.title,
+      count: NovelFish.novel.chapterCount(),
+      open: thinks[thinks.length - 1].dataset.open,
+      first: (document.querySelector('.nf-p') || {}).textContent || ''
+    };
+  });
+  check('把链接粘回窗口即还原那本书',
+    pastedBack.title === '潮汐拾遗' && pastedBack.count === 3, JSON.stringify(pastedBack));
+  check('还原后「深度思考」自动展开且正文就位',
+    pastedBack.open === '1' && pastedBack.first.includes('灯芯第三次熄灭'),
+    pastedBack.open + ' / ' + pastedBack.first.slice(0, 14));
+
+  // 4) 等价路径：地址栏带 fragment 直接打开（换个标签页，等于把链接发给另一台机器）
+  const p4 = await ctx.newPage();
+  const p4err = [];
+  p4.on('pageerror', e => p4err.push('pageerror: ' + e.message));
+  p4.on('console', m => { if (m.type() === 'error') p4err.push('console: ' + m.text()); });
+  await p4.goto(BASE + '/#nf=' + novelPayload, { waitUntil: 'load' });
+  await p4.waitForSelector('.ds-think-body .nf-p', { timeout: 8000 });
+  await p4.waitForTimeout(600);
+  const received = await p4.evaluate(() => ({
+    title: NovelFish.store.state.novel.title,
+    count: NovelFish.novel.chapterCount(),
+    first: (document.querySelector('.nf-p') || {}).textContent || '',
+    hash: location.hash,
+    toast: (document.getElementById('toastWrap').textContent || '').trim()
+  }));
+  check('带 fragment 打开即装好分享副本',
+    received.title === '潮汐拾遗' && received.count === 3,
+    received.title + ' / ' + received.count);
+  check('分享副本的正文进了「深度思考」框', received.first.includes('灯芯第三次熄灭'),
+    received.first.slice(0, 14));
+  check('收下之后把载荷从地址栏抹掉（否则刷新就重装一遍）', received.hash === '', received.hash);
+  check('接收全程无页面错误', p4err.length === 0, p4err.join(' | '));
+  await p4.screenshot({ path: SHOT + '/31-share-received.png' });
+  await p4.close();
+
+  // 5) 百万字级长篇：编不进链接，改为落一份分享副本文件
+  await page.locator('#fileInput').setInputFiles(BIG_TXT);
+  await page.waitForTimeout(2600);
+  const bigBook = await page.evaluate(() => ({
+    chars: NovelFish.novel.totalChars(),
+    chapters: NovelFish.novel.chapterCount()
+  }));
+  check('压力样本已载入（百万字级）', bigBook.chars > 900000, JSON.stringify(bigBook));
+  check('百万字长篇编不进链接',
+    (await page.evaluate(async () => (await NovelFish.share.pack(NovelFish.api.doc)) === null)));
+
+  const dl = page.waitForEvent('download', { timeout: 20000 });
+  await page.locator('.ds-share-btn').last().click();
+  await page.waitForTimeout(300);
+  await page.locator('.ds-modal-actions .ds-btn--primary').last().click();
+  const download = await dl;
+  await page.waitForTimeout(500);
+  const bigLink = (await page.locator('.ds-modal-content .ds-linkbox span').last().textContent()) || '';
+  check('超长书：链接退回官网形状（不给一条打不开的巨长 URL）',
+    /^https:\/\/chat\.deepseek\.com\/share\/[A-Za-z0-9]{18}$/.test(bigLink), bigLink);
+  check('超长书：另存为分享副本文件',
+    /-分享副本\.txt$/.test(download.suggestedFilename()), download.suggestedFilename());
+  const dlPath = path.join(os.tmpdir(), 'nf-dl-' + process.pid + '.txt');
+  await download.saveAs(dlPath);
+  const dlText = fs.readFileSync(dlPath, 'utf8');
+  check('分享副本文件带书名与章节结构',
+    /^《nf-big-\d+》\n\n第 1 章\n/.test(dlText.slice(0, 60)), JSON.stringify(dlText.slice(0, 30)));
+  check('分享副本文件是完整的（末尾章节都在）',
+    dlText.length > 900000 && dlText.slice(-20000).includes('第 120 章'),
+    dlText.length + ' 字 / 尾部: ' + JSON.stringify(dlText.slice(-40)));
+  fs.unlinkSync(dlPath);
+  check('分享全程无页面错误', errors.length === 0, errors.join(' | '));
+
   /* ---------- 汇总 ---------- */
   console.log('\n== PASS (' + ok.length + ') ==');
   ok.forEach(l => console.log('  ✓ ' + l));
@@ -1070,5 +1268,6 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   await browser.close();
   try { fs.unlinkSync(AVATAR_PNG); } catch (e) { /* 已经删掉就算了 */ }
   try { fs.unlinkSync(FAKE_EPUB); } catch (e) { /* 已经删掉就算了 */ }
+  [SHARE_TXT, OTHER_TXT, BIG_TXT].forEach(f => { try { fs.unlinkSync(f); } catch (e) { /* noop */ } });
   process.exit(fail.length || errors.length ? 1 : 0);
 })().catch(e => { console.error('SMOKE CRASH:', e); process.exit(2); });

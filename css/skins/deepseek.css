@@ -903,6 +903,9 @@
 .ds-btn--primary:hover { background: var(--ds-brand-hover); }
 .ds-btn--ghost { background: transparent; color: var(--ds-label-1); border: 1px solid var(--ds-border-2); }
 .ds-btn--ghost:hover { background: var(--ds-hover); }
+/* 主按钮在「创建链接」压缩正文的那几十毫秒里禁用，官网的按钮也是这个压暗法 */
+.ds-btn:disabled { opacity: .6; cursor: default; }
+.ds-btn--primary:disabled:hover { background: var(--ds-brand); }
 
 /* ============================================================
    窄屏：侧栏改成覆盖层

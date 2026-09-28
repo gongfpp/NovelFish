@@ -4,7 +4,8 @@
    设计前提：**除了「深度思考」里藏着小说，其余必须和官网一模一样**。
    所以这里只做官网有的东西，不加任何自造功能：
      · 侧栏：新对话 / 搜索（⌘J）/ 分组会话列表 / 底部账户行
-     · 顶栏：标题 + 分享（打开官网规格的分享弹窗）
+     · 顶栏：标题 + 分享（打开官网规格的分享弹窗；小说摊在屏幕上时，
+            创建的链接会把这本书一起带走，见 share.js）
      · 消息：用户气泡、助手「深度思考」折叠块、悬停才出现的操作条
      · 输入区：textarea + 深度思考/智能搜索 能力开关 + 附件 + 发送
 
@@ -159,13 +160,6 @@
       '</div>';
   }
 
-  function makeId(n) {
-    var s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    var out = '';
-    for (var i = 0; i < n; i++) out += s[Math.floor(Math.random() * s.length)];
-    return out;
-  }
-
   NF.defineSkin({
     id: 'deepseek',
     name: 'DeepSeek',
@@ -286,6 +280,8 @@
       var shareBtn = root.querySelector('.ds-share-btn');
       var modalEl = root.querySelector('.ds-modal');
       var linkBox = root.querySelector('.ds-linkbox');
+      /* 弹窗主按钮的稳定引用：它的 data-share 会在 create / copy 之间来回换 */
+      var sharePrimary = modalEl.querySelector('.ds-modal-actions .ds-btn--primary');
       var stageEl = root.querySelector('.ds-stage');
       var threadEl = root.querySelector('.ds-thread');
       var innerEl = root.querySelector('.ds-thread-inner');
@@ -455,31 +451,48 @@
 
       /* ============================================================
          分享弹窗
+         外观与交互一律照官网；只有一处不同，而且是看不见的：
+         「深度思考」展开着（也就是小说正摊在屏幕上）时，创建的链接
+         会把整本书压缩后编进 fragment —— 这条链接自包含，
+         换台机器把它粘回应用就是同一本书。收起状态下就是官网那张空的分享链。
          ============================================================ */
+      function novelVisible() {
+        return !!(currentThink && currentThink.dataset.open === '1') && api.chapterCount() > 0;
+      }
+
       function openShare() {
         modalEl.hidden = false;
         linkBox.hidden = true;
         linkBox.querySelector('span').textContent = '';
         SHARE_LINK = '';
-        var primary = modalEl.querySelector('[data-share="create"]');
-        primary.textContent = '创建链接';
-        primary.dataset.share = 'create';
+        // 主按钮必须按位置找，不能按 data-share 找：
+        // 创建过链接之后它的 data-share 已变成 copy，按值找会扑空。
+        sharePrimary.textContent = '创建链接';
+        sharePrimary.disabled = false;
+        sharePrimary.dataset.share = 'create';
       }
 
       function closeShare() { modalEl.hidden = true; }
 
       function createShareLink() {
-        if (!SHARE_LINK) {
-          SHARE_LINK = 'https://chat.deepseek.com/share/' + makeId(18);
+        if (SHARE_LINK) { copyText(SHARE_LINK, '链接已复制'); return; }
+
+        sharePrimary.disabled = true;      // 压一本书要几十毫秒，挡住连点
+        api.share.make(novelVisible()).then(function (res) {
+          sharePrimary.disabled = false;
+          SHARE_LINK = res.url;
           linkBox.querySelector('span').textContent = SHARE_LINK;
           linkBox.hidden = false;
-          var primary = modalEl.querySelector('[data-share="create"]');
-          primary.textContent = '复制链接';
-          primary.dataset.share = 'copy';
+          sharePrimary.textContent = '复制链接';
+          sharePrimary.dataset.share = 'copy';
           copyText(SHARE_LINK, '链接已复制');
-          return;
-        }
-        copyText(SHARE_LINK, '链接已复制');
+
+          if (res.embedded) {
+            api.toast('链接里带着《' + (api.doc.title || '未命名') + '》');
+          } else if (res.loadedToFile) {
+            api.toast('这本书超出链接长度，已另存为分享副本文件');
+          }
+        });
       }
 
       /* ============================================================
