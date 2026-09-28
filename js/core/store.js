@@ -69,20 +69,40 @@ window.NovelFish = window.NovelFish || {};
       var lines = text.split('\n');
       var out = [];
       var listBuf = [];
+      var tableBuf = [];
       var flushList = function () {
         if (!listBuf.length) return;
         out.push('<ul class="rt-ul">' + listBuf.join('') + '</ul>');
         listBuf = [];
       };
+      var flushTable = function () {
+        if (!tableBuf.length) return;
+        // 丢掉 |---|---| 这类分隔行
+        var rows = tableBuf.filter(function (r) { return !/^\|[\s:|-]+\|$/.test(r); });
+        if (rows.length) {
+          var html = '<table class="rt-table">';
+          rows.forEach(function (r, i) {
+            var cells = r.replace(/^\||\|$/g, '').split('|');
+            var tag = i === 0 ? 'th' : 'td';
+            html += '<tr>' + cells.map(function (c) {
+              return '<' + tag + '>' + c.trim() + '</' + tag + '>';
+            }).join('') + '</tr>';
+          });
+          out.push(html + '</table>');
+        }
+        tableBuf = [];
+      };
 
       lines.forEach(function (line) {
         var t = line.trim();
         if (/^\u0000BLOCK\d+\u0000$/.test(t)) {
-          flushList();
+          flushList(); flushTable();
           out.push(t.replace(/\u0000BLOCK(\d+)\u0000/g, function (_, i) { return blocks[+i]; }));
           return;
         }
-        if (!t) { flushList(); return; }
+        if (!t) { flushList(); flushTable(); return; }
+        if (/^\|.*\|$/.test(t)) { flushList(); tableBuf.push(t); return; }
+        flushTable();
         if (/^[-*]\s+/.test(t)) { listBuf.push('<li>' + t.replace(/^[-*]\s+/, '') + '</li>'); return; }
         if (/^\d+[.、]\s*/.test(t) && /\d+[.、]/.test(t.slice(0, 5))) {
           listBuf.push('<li>' + t + '</li>'); return;
@@ -91,6 +111,7 @@ window.NovelFish = window.NovelFish || {};
         out.push('<p>' + t + '</p>');
       });
       flushList();
+      flushTable();
 
       return out.join('')
         .replace(/\u0000BLOCK(\d+)\u0000/g, function (_, i) { return blocks[+i]; });
@@ -100,12 +121,26 @@ window.NovelFish = window.NovelFish || {};
   /* ---------------- 默认状态 ---------------- */
   function defaultState() {
     return {
-      version: 1,
+      version: 2,
       skin: 'deepseek',
       reading: { font: 14, line: 1.9, width: 780, auto: false, speed: 1 },
-      mask: { script: 'auto', blurCollapse: true, openThinking: true, chrome: true },
+      mask: {
+        script: 'auto',        // 伪装剧本 id，'auto' 为混合轮换
+        blurCollapse: true,    // 窗口失焦自动收起
+        openThinking: true,    // 新消息默认展开「深度思考」
+        chrome: true,          // 显示浏览器外框
+        os: 'mac',             // 外框系统风格：mac | win
+        browser: 'chrome',     // 外框浏览器：chrome | edge
+        webSearch: false,      // 输入框里的「智能搜索」开关（纯观感）
+        readOnly: false        // 净读模式：折叠对话双方正文
+      },
+      /* 浏览器外框里显示的资料（地址栏右侧头像与资料面板） */
+      browser: { name: '摸鱼的人', email: 'moyu.ren@example.com' },
       novel: { title: '', docId: '', text: '' },
-      progress: { chapter: 0, loadedThrough: 0, scrollTop: 0, feedOffset: null, exchanges: [] }
+      progress: { chapter: 0, loadedThrough: 0, scrollTop: 0, feedOffset: null },
+      /* 会话列表：见 js/core/chat.js */
+      chat: { activeId: '', seq: 0, convs: [] },
+      sidebar: { open: true, query: '' }
     };
   }
 
