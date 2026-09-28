@@ -75,7 +75,14 @@
        api.on(evt, fn)             订阅：'reading' | 'progress' | 'mask' | 'panic'
                                          | 'conv' | 'thread-reload' | 'sidebar'
                                          | 'browser-profile' | 'find'
-       api.isPanic()               当前是否处于老板键隐藏态
+                                   'panic' 的处理是皮肤的义务：
+                                     · p === true  收起全部正文块，并把自己那根冻结条
+                                                   停在视口里（否则用户点不回来）；
+                                                   核心已先行记好阅读位置
+                                     · p === false 重新展开承载正文的那一块
+       api.isPanic()               当前是否处于老板键收起态
+       api.collapse()              老板键本体：只收不放
+       api.resume()                用户自己点开思考框时调它，解除收起态并回到阅读位置
        api.toast(msg)              提示
        api.registerFeed(feed)      把当前 feed 交给核心托管（自动滚动 / 全局跳章要用）
    ============================================================ */

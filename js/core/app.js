@@ -132,6 +132,17 @@
 
     isPanic: function () { return panic; },
 
+    /**
+     * 老板键：只收不放。
+     * 有意做成单向的 —— 「再按一下又展开」本身就是一条露馅路径，
+     * 要回到阅读态请点「深度思考」那一行（和真人手动点开一样），
+     * 皮肤在那一刻调 resume()，顺带把阅读位置还原回来。
+     */
+    collapse: function () { setPanic(true); },
+
+    /** 皮肤在用户自己点开「深度思考」时调它：解除收起态，回到收起前的阅读位置 */
+    resume: function () { setPanic(false); },
+
     /** 把小说挂进「深度思考」容器；返回 feed 控制器 */
     mountThinking: function (bodyEl, scroller, opts) {
       feeds.forEach(function (f) { try { f.destroy(); } catch (e) { /* noop */ } });
@@ -368,7 +379,7 @@
   }
 
   /* ============================================================
-     老板键
+     老板键：单向，只收不放
      ============================================================ */
   function setPanic(v, opts) {
     opts = opts || {};
@@ -376,17 +387,21 @@
     panic = v;
     if (opts.byBlur) panicByBlur = v;
     stopAuto();
+
+    // 先钉住阅读位置，再通知皮肤去折叠。
+    // 折叠会把正文容器 display:none，之后 bodyTop() 读到的是全零矩形，
+    // 那个时机再 savePos() 记下来的偏移就是错的。
+    if (activeFeed && panic) {
+      activeFeed.savePos();
+      activeFeed.setQuiet(true);
+    }
+
     NF.bus.emit('panic', panic);
     if (!activeFeed) return;
 
-    var el = activeFeed.scrollEl;
-    if (panic) {
-      // 收起：记住阅读位置，再把视野推到伪装回答上（进度不受影响）
-      activeFeed.savePos();
-      activeFeed.setQuiet(true);
-      el.scrollTop = el.scrollHeight;
-    } else {
-      // 恢复：回到收起前的位置
+    // 收起时的落点由皮肤决定（它才知道自己那根冻结条在哪），核心只负责收起后不写进度。
+    if (!panic) {
+      // 回到收起前的位置
       activeFeed.setQuiet(false);
       activeFeed.restorePos();
       if (state.reading.auto) startAuto(true);
@@ -540,7 +555,7 @@
     var mod = mac ? '&#8984;' : 'Ctrl';
     var k = function (s) { return '<kbd>' + s + '</kbd>'; };
     var rows = [
-      [k('Esc'), '老板键：收起 / 展开「深度思考」，视野回到伪装回答'],
+      [k('Ctrl') + ' + ' + k('D'), '老板键：一键收起「深度思考」，视野回到伪装回答（只收不放）'],
       [k(mod) + ' + ' + k('B'), '打开 / 收起左侧的聊天记录与对话列表'],
       [k('空格') + ' / ' + k('J'), '向下翻一屏'],
       [k('Shift') + ' + ' + k('空格') + ' / ' + k('K'), '向上翻一屏'],
@@ -783,8 +798,13 @@
         }
         if (!$('console').hidden) { openConsole(false); return; }
         if (t && t.blur) t.blur();
-        setPanic(!panic);
-        NF.toast(panic ? '已收起（按 Esc 恢复）' : '已展开');
+        return;
+      }
+
+      // 老板键：Ctrl / ⌘ + D，只收不放
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();          // 顺手吃掉浏览器自己的「加书签」
+        api.collapse();
         return;
       }
 

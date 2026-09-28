@@ -10,7 +10,8 @@
 
    正文位置：助手消息里的「深度思考」正文容器。
    吸顶方式：思考块的表头本身 position:sticky 冻结在消息区顶部，
-             滚动正文时一直在最上面，点一下就收起（老板键手感）。
+             滚动正文时一直在最上面。点表头 = 开合（官网原本的交互）；
+             老板键（Ctrl+D）走核心，只收不放，点表头即回到阅读位置。
    ============================================================ */
 (function (NF) {
   'use strict';
@@ -574,7 +575,10 @@
         var head = t.closest('.ds-think-head');
         if (head) {
           var think = head.closest('.ds-think');
-          setThink(think, think.dataset.open !== '1');
+          var willOpen = think.dataset.open !== '1';
+          setThink(think, willOpen);
+          // 被老板键收起后由用户自己点开 → 交回核心，顺带还原阅读位置
+          if (willOpen && api.isPanic()) api.resume();
           return;
         }
 
@@ -635,7 +639,7 @@
         this.value = '';
       }
 
-      /* Esc 关分享弹窗 / 账户菜单（在核心处理老板键之前先吃掉） */
+      /* Esc 关分享弹窗 / 账户菜单（核心也会用 Esc 关外框面板，这边先吃掉） */
       function onDocKeydown(e) {
         if (e.key !== 'Escape') return;
         if (modalEl && !modalEl.hidden) { closeShare(); e.stopPropagation(); e.preventDefault(); return; }
@@ -652,10 +656,25 @@
       /* ============================================================
          订阅
          ============================================================ */
+      /**
+       * 收起后的落点：把「深度思考」这一行停在视口顶上。
+       * 不这么做的话，视野会停在正文底部，而正文一藏、冻结条就跑到屏幕外面去了
+       * —— 老板键按下去容易，想点回来得先往上翻半天。
+       * 量必须在 collapseAll() 之后：正文还在时表头是 sticky 吸顶的，
+       * 那时量到的是「当前滚动位置」，不是它在文档里的真实位置。
+       */
+      function parkHeadAtTop() {
+        var head = currentThink && currentThink.querySelector('.ds-think-head');
+        if (!head) return;
+        var offset = head.getBoundingClientRect().top -
+                     threadEl.getBoundingClientRect().top + threadEl.scrollTop;
+        threadEl.scrollTop = Math.max(0, Math.round(offset));
+      }
+
       var offPanic = api.on('panic', function (p) {
         if (p) {
           collapseAll();
-          threadEl.scrollTop = threadEl.scrollHeight;
+          parkHeadAtTop();
         } else {
           openActive();
         }
@@ -687,7 +706,7 @@
       syncChips();
       renderHistory();
       renderThread();
-      if (api.firstRun('novel-hint')) api.toast('小说在「深度思考」里 · Esc 一键收起');
+      if (api.firstRun('novel-hint')) api.toast('小说在「深度思考」里 · Ctrl+D 一键收起');
 
       CLEANUP = [
         function () {

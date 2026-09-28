@@ -179,7 +179,10 @@
       function onRootClick(e) {
         if (e.target.closest('.gpt-think-head')) {
           var msg = e.target.closest('.gpt-msg');
-          msg.dataset.open = msg.dataset.open === '1' ? '0' : '1';
+          var willOpen = msg.dataset.open !== '1';
+          msg.dataset.open = willOpen ? '1' : '0';
+          // 被老板键收起后由用户自己点开 → 交回核心，顺带还原阅读位置
+          if (willOpen && api.isPanic()) api.resume();
           return;
         }
         if (e.target.closest('.gpt-open-console') || e.target.closest('.gpt-user')) {
@@ -216,10 +219,23 @@
         input.style.height = Math.min(input.scrollHeight, 168) + 'px';
       });
 
+      /**
+       * 收起后的落点：把「已深度思考」这一行停在视口顶上。
+       * 否则正文一藏，这一行就被挤到屏幕外，想点回来得先往上翻。
+       * 量必须在 collapseAll() 之后（正文还在时表头吸顶，量到的是当前滚动位置）。
+       */
+      function parkHeadAtTop() {
+        var head = currentThink && currentThink.querySelector('.gpt-think-head');
+        if (!head) return;
+        var offset = head.getBoundingClientRect().top -
+                     thread.getBoundingClientRect().top + thread.scrollTop;
+        thread.scrollTop = Math.max(0, Math.round(offset));
+      }
+
       var offPanic = api.on('panic', function (p) {
         if (p) {
           collapseAll();
-          thread.scrollTop = thread.scrollHeight;
+          parkHeadAtTop();
         } else if (currentThink) {
           currentThink.dataset.open = '1';
         }
@@ -235,7 +251,7 @@
 
       syncAccount();
       rebuild(false);
-      if (api.firstRun('novel-hint')) api.toast('小说在「已深度思考」里 · Esc 一键收起');
+      if (api.firstRun('novel-hint')) api.toast('小说在「已深度思考」里 · Ctrl+D 一键收起');
 
       CLEANUP = [function () {
         root.removeEventListener('click', onRootClick);

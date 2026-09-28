@@ -1,7 +1,7 @@
 /* ============================================================
    tools/smoke.js — 端到端冒烟测试（Playwright + Chromium）
    覆盖：
-     核心渲染 / 老板键 / 切章 / 滚动续章 / 发送消息 / 控制台 /
+     核心渲染 / 老板键（Ctrl+D，只收不放）/ 切章 / 滚动续章 / 发送消息 / 控制台 /
      排版参数 / 皮肤热切换 / 刷新恢复 /
      macOS 与 Windows 双外框 / Chrome 与 Edge 双外框 /
      地址栏与工具栏图标注入 / 站点信息、扩展程序、个人资料、主菜单四个面板 /
@@ -252,26 +252,69 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   check('再点一次恢复展开',
     await page.locator('.ds-think').last().getAttribute('data-open') === '1');
 
-  /* ---------- 6. 老板键 ---------- */
+  /* ---------- 6. 老板键：Ctrl+D，只收不放 ---------- */
   await page.locator('.ds-thread').evaluate(e => { e.scrollTop = e.scrollHeight; });
   await page.waitForTimeout(300);
   await shot('01-reading');
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(250);
-  check('Esc 收起全部思考框',
+
+  // 先滚到正文里一个明确的位置：收起后点开必须原样回来
+  const readTop = await page.locator('.ds-thread').evaluate(e => {
+    const body = document.querySelector('.ds-ai-msg:last-child .ds-think-body');
+    const top = body.getBoundingClientRect().top - e.getBoundingClientRect().top + e.scrollTop;
+    e.scrollTop = Math.round(top + 620);
+    return e.scrollTop;
+  });
+  await page.waitForTimeout(320);
+
+  await page.keyboard.press('Control+d');
+  await page.waitForTimeout(300);
+  check('Ctrl+D 收起全部思考框',
     await page.locator('.ds-think[data-open="1"]').count() === 0);
-  check('Esc 收起后仍能看到伪装回答',
+  check('Ctrl+D 收起后仍能看到伪装回答',
     await page.locator('.ds-answer').first().isVisible());
+  check('Ctrl+D 收起后正文真的不可见',
+    await page.locator('.ds-ai-msg:last-child .nf-p').evaluateAll(
+      els => els.every(e => e.getClientRects().length === 0)));
+  check('收起后冻结条留在视口里（否则点不回去）',
+    await page.locator('.ds-think-head').last().evaluate((h) => {
+      const t = document.querySelector('.ds-thread').getBoundingClientRect();
+      const r = h.getBoundingClientRect();
+      return r.top >= t.top - 2 && r.bottom <= t.bottom;
+    }));
+  check('老板键进入收起态', await page.evaluate(() => NovelFish.api.isPanic()));
   await shot('02-panic');
+
+  // 只收不放：连按、按 Esc 都只会保持收起
+  await page.keyboard.press('Control+d');
+  await page.waitForTimeout(250);
+  check('再按 Ctrl+D 仍然只是收起，不会展开',
+    await page.locator('.ds-think[data-open="1"]').count() === 0);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
-  check('再按 Esc 恢复阅读',
-    await page.locator('.ds-think[data-open="1"]').count() >= 1);
+  check('Esc 已不再是老板键',
+    await page.locator('.ds-think[data-open="1"]').count() === 0 &&
+    await page.evaluate(() => NovelFish.api.isPanic()));
+
+  // 回到阅读态：点冻结条，和真人手动点开一样
+  await page.locator('.ds-think-head').last().click();
+  await page.waitForTimeout(420);
+  check('点冻结条恢复展开',
+    await page.locator('.ds-think').last().getAttribute('data-open') === '1');
+  check('点开后自动解除收起态',
+    !(await page.evaluate(() => NovelFish.api.isPanic())));
+  const readTopAfter = await page.locator('.ds-thread').evaluate(e => e.scrollTop);
+  check('点开后回到收起前的阅读位置', Math.abs(readTopAfter - readTop) < 80,
+    `${readTop} -> ${readTopAfter}`);
+
+  // 点过的表头会留下焦点（官网 .ds-msg:focus-within 就是让操作条保持可见），
+  // 这里手动放下，免得影响后面「操作条默认透明」那条断言
+  await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
+  await page.waitForTimeout(120);
 
   /* ---------- 7. 消息操作条与分享（官网有的功能） ---------- */
-  // 悬停才出现的操作条（先把鼠标挪开，避免上一步的悬停残留）
+  // 悬停才出现的操作条（先把鼠标挪开，等 0.2s 的过渡走完，避免上一步的悬停残留）
   await page.mouse.move(6, 6);
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(360);
   const aiBox = page.locator('.ds-ai-msg').last();
   check('AI 消息的操作条默认透明', await aiBox.locator('.ds-msg-actions').evaluate(
     e => getComputedStyle(e).opacity === '0'));
@@ -334,7 +377,7 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
   check('Esc 关闭分享弹窗', await page.locator('.ds-modal-content').last().isHidden());
-  check('关弹窗的那次 Esc 不触发老板键',
+  check('关弹窗的那次 Esc 不影响阅读态',
     await page.locator('.ds-think[data-open="1"]').count() >= 1);
 
   /* ---------- 8. 章节跳转与续章 ---------- */
@@ -510,12 +553,12 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
     await page.locator('#popSite .pop-item').count() === 2);
   await shot('12-pop-site');
 
-  // Esc 必须先吃掉面板，不能顺手触发老板键
+  // Esc 必须先吃掉面板，且不影响阅读态（老板键已经换成 Ctrl+D）
   const thinkOpenBefore = await page.locator('.ds-think[data-open="1"]').count();
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
   check('Esc 先关闭弹出面板', await page.locator('#popSite').isHidden());
-  check('关面板的那次 Esc 不触发老板键',
+  check('关面板的那次 Esc 不影响阅读态',
     await page.locator('.ds-think[data-open="1"]').count() === thinkOpenBefore,
     `${thinkOpenBefore} -> ${await page.locator('.ds-think[data-open="1"]').count()}`);
 
@@ -693,7 +736,7 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
   check('Esc 关闭查找条', await page.locator('#findBar').isHidden());
-  check('关查找条的那次 Esc 不触发老板键',
+  check('关查找条的那次 Esc 不影响阅读态',
     await page.locator('.ds-think[data-open="1"]').count() >= 1);
 
   // 缩放
@@ -790,11 +833,11 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   /* ---------- 17. 截图：macOS 外框下的完整体 ---------- */
   await page.locator('.ds-thread').evaluate(e => { e.scrollTop = e.scrollHeight; });
   await page.waitForTimeout(300);
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+d');
   await page.waitForTimeout(250);
   await shot('08-panic-mac');
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(300);
+  await page.locator('.ds-think-head').last().click();
+  await page.waitForTimeout(350);
 
   /* ---------- 18. 新建对话 → 欢迎页 ---------- */
   await page.locator('.ds-newchat').click();
@@ -838,12 +881,13 @@ fs.writeFileSync(FAKE_EPUB, '这不是压缩包，只是一个改了扩展名的
   check('GPT 皮肤无残留 DeepSeek 节点', await page.locator('.ds').count() === 0);
   await shot('10-gpt');
 
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+d');
   await page.waitForTimeout(250);
   check('GPT 皮肤下老板键可用', await page.locator('.gpt-msg[data-open="1"]').count() === 0);
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(250);
-  check('GPT 皮肤可恢复阅读态', await page.locator('.gpt-msg[data-open="1"]').count() === 1);
+  await page.locator('.gpt-think-head').last().click();
+  await page.waitForTimeout(300);
+  check('GPT 皮肤点思考头可恢复阅读态',
+    await page.locator('.gpt-msg[data-open="1"]').count() === 1);
 
   await page.locator('.gpt-open-console').click();
   await page.waitForTimeout(250);
