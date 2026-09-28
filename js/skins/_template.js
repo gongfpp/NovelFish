@@ -86,12 +86,22 @@
         msg.dataset.open = msg.dataset.open === '1' ? '0' : '1';
       });
 
-      // ---------- 6. 老板键：必须实现，否则 Esc 会在本皮肤里失效 ----------
+      // ---------- 6. 老板键：必须实现，否则 Ctrl+D 在本皮肤里不起作用 ----------
+      // 只有收起（p === true）这一路；展开由用户自己点开思考框完成，
+      // 那时核心会再回调一次 p === false。
+      // 收起后的落点由皮肤负责：把自己那根冻结条停在视口里，
+      // 否则正文一藏它就跑到屏幕外，用户点不回来。
       var offPanic = api.on('panic', function (p) {
         Array.prototype.forEach.call(thread.querySelectorAll('.tpl-msg'), function (m) {
           m.dataset.open = p ? '0' : (m.classList.contains('is-last') ? '1' : '0');
         });
-        if (p) thread.scrollTop = thread.scrollHeight;
+        if (!p) return;
+        // 量要在折叠之后：正文还在时表头是吸顶的，量到的是当前滚动位置
+        var head = thread.querySelector('.tpl-msg.is-last .tpl-think-head');
+        if (!head) return;
+        var offset = head.getBoundingClientRect().top -
+                     thread.getBoundingClientRect().top + thread.scrollTop;
+        thread.scrollTop = Math.max(0, Math.round(offset));
       });
 
       // ---------- 7. 发送新消息：追加一条伪装对话，正文继续往下流 ----------
