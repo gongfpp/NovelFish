@@ -122,6 +122,19 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   cursor: pointer;
 }
 
+.text-input {
+  width: 100%;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-s);
+  padding: 8px 10px;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.text-input + .text-input { margin-top: 8px; }
+.text-input::placeholder { color: var(--c-text-3); }
+.text-input:focus { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-weak); }
+
 input[type="range"] {
   width: 100%;
   appearance: none;
@@ -193,7 +206,7 @@ input[type="range"]::-webkit-slider-thumb {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 400px;
+  width: 420px;
   max-width: 92vw;
   background: #fff;
   z-index: calc(var(--z-console) + 1);
@@ -222,7 +235,10 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 2px;
   padding: 0 12px;
   border-bottom: 1px solid var(--c-line);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.console-tabs::-webkit-scrollbar { display: none; }
 .ctab {
   border: 0; background: transparent; cursor: pointer;
   padding: 8px 10px 10px; font-size: 13px; color: var(--c-text-2);
@@ -345,6 +361,66 @@ input[type="range"]::-webkit-slider-thumb {
   background: #eef0f4; color: var(--c-text-3);
 }
 .skin-tag.is-live { background: rgba(45, 167, 105, .12); color: #2da769; }
+
+/* 分段控件（外观里的 macOS / Windows 切换） */
+.seg {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: #f1f3f6;
+  border-radius: 9px;
+}
+.seg-item {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.seg-item:hover { color: var(--c-text); }
+.seg-item.is-active {
+  background: #fff;
+  color: var(--c-text);
+  font-weight: 600;
+  box-shadow: var(--shadow-1);
+}
+
+/* 对话模板清单 */
+.tpl-list {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-m);
+  margin-top: 8px;
+}
+.tpl-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f7f8fa;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--c-text-2);
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--c-line);
+}
+.tpl-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f3f6;
+}
+.tpl-item:last-child { border-bottom: 0; }
+.tpl-item:hover { background: var(--c-bg-soft); }
+.tpl-idx { flex: 0 0 18px; font-size: 11px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.tpl-q { flex: 1; line-height: 1.5; }
 .skin-radio {
   width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid #ccd2da; flex: 0 0 auto;
 }

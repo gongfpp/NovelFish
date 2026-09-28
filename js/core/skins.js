@@ -20,30 +20,53 @@
      })
 
    ── mount 可用的 api（跨皮肤通用能力，由核心提供）────────
-     api.escape(str)             HTML 转义
-     api.richText(str)           简易 Markdown → HTML（伪装回答用）
-     api.pickCamouflage()        取下一组伪装问答 { q, a }
-     api.historyTitles(n)        取一组伪装的「最近对话」标题
-     api.mountThinking(body, scroller)
-                                 把小说挂进「深度思考」容器，返回 feed 控制器
-                                 · refresh()        重渲染（字号/切章后调用）
-                                 · appendNext()      追加下一章（滚到底自动触发）
-                                 · gotoChapter(i)    跳章
-                                 · next() / prev()
-                                 · scrollToTop() / scrollByPx(n)
-                                 · ensureMore()
-                                 · destroy()         切换皮肤前必须调用
-     api.gotoChapter(i)          以字节为单位跳章（内部会同步所有已挂载 feed）
-     api.progressPercent()       0-100
-     api.toc()                   目录 [{ index, title, paras }]
-     api.doc                     小说文档 { title, chapters, totalChars }
-     api.reading                 阅读参数 { font, line, width, auto, speed }
-     api.mask                    伪装参数 { script, blurCollapse, openThinking }
-     api.on(evt, fn)             订阅：'reading' | 'progress' | 'mask' | 'panic'
-     api.isPanic()               当前是否处于老板键隐藏态
-     api.setOpenThinking(bool)   设置「深度思考」默认展开态
-     api.toast(msg)              提示
-     api.registerFeed(feed)      把当前 feed 交给核心托管（自动滚动 / 全局跳章要用）
+     内容
+       api.escape(str)             HTML 转义
+       api.richText(str)           简易 Markdown → HTML（含表格 / 代码块 / 列表）
+       api.pickCamouflage()        取下一组伪装问答 { q, a }（不落盘）
+       api.historyTitles(n)        取一组伪装的「最近对话」标题
+
+     会话（左侧聊天记录 / 对话列表的数据源，见 js/core/chat.js）
+       api.chat                    会话模块本体
+       api.convs                   按今天/昨天/7天内/30天内/更早分好组的会话
+       api.activeConv              当前会话 { id, title, ... }
+       api.exchanges               当前会话的伪装问答数组（首次读取时按需生成）
+       api.selectConv(id)          切换会话
+       api.newConv()               新建会话
+       api.makeExchange({ q })     取一组问答并写入当前会话；q 可覆盖提问内容
+       api.insertTemplate(s, i)    把第 s 个剧本的第 i 组问答插到当前对话末尾
+
+     阅读
+       api.mountThinking(body, scroller, { noRestore })
+                                   把小说挂进「深度思考」容器，返回 feed 控制器
+                                   · refresh() / appendNext() / gotoChapter(i)
+                                   · next() / prev() / scrollToTop() / scrollByPx(n)
+                                   · ensureMore() / savePos() / restorePos() / destroy()
+       api.gotoChapter(i)          换章（内部会同步所有已挂载 feed）
+       api.progressPercent()       0-100，按「正在读的章」算
+       api.currentChapter()        当前正在读的章节序号
+       api.toc()                   目录 [{ index, title, paras }]
+       api.doc                     小说文档 { title, chapters, totalChars }
+       api.reading                 阅读参数 { font, line, width, auto, speed }
+       api.loadNovelFile(file)     把用户选的文件当新书载入（皮肤里的「上传文件」可用）
+
+     伪装 / 外框
+       api.mask                    伪装参数 { script, blurCollapse, openThinking,
+                                                 chrome, os, webSearch, readOnly }
+       api.isReadOnly() / setReadOnly(v)
+                                   净读模式：折叠对话双方正文
+       api.isSidebarOpen() / setSidebar(v)
+       api.sidebarQuery() / setSidebarQuery(v)
+                                   侧边栏搜索词
+       api.setOs('mac' | 'win')    切换浏览器外框版本
+       api.setOpenThinking(v) / setWebSearch(v)
+
+     其它
+       api.on(evt, fn)             订阅：'reading' | 'progress' | 'mask' | 'panic'
+                                         | 'conv' | 'thread-reload' | 'sidebar'
+       api.isPanic()               当前是否处于老板键隐藏态
+       api.toast(msg)              提示
+       api.registerFeed(feed)      把当前 feed 交给核心托管（自动滚动 / 全局跳章要用）
    ============================================================ */
 (function (NF) {
   'use strict';

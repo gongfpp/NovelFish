@@ -1,0 +1,106 @@
+/* ============================================================
+   reader.css — 小说正文与伪装回答的共享样式
+   皮肤插件只负责画自己的外壳，正文排版（.nf-*）与
+   伪装回答的富文本（.rt-*）由这里统一提供，
+   靠 --nf-font / --nf-line / --nf-width 三个变量受控。
+
+   注意：不要把这些规则写进某个皮肤里，否则其他皮肤会隐性依赖它。
+   ============================================================ */
+
+/* ---------------- 小说正文（挂在「深度思考」容器里） ---------------- */
+.nf-sec {
+  font-size: var(--nf-font, 14px);
+  line-height: var(--nf-line, 1.9);
+  max-width: var(--nf-width, 780px);
+}
+
+.nf-ch {
+  margin: 1.35em 0 .75em;
+  padding-left: .6em;
+  font-weight: 600;
+  font-size: 1.06em;
+  border-left: 3px solid currentColor;
+  opacity: .88;
+}
+.nf-sec > .nf-ch:first-child { margin-top: 0; }
+
+.nf-p {
+  margin: 0 0 .78em;
+  text-indent: 2em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.nf-sec > .nf-p:last-child { margin-bottom: 0; }
+
+/* 续章时的「继续思考中…」占位 */
+.nf-pending {
+  margin: .6em 0 0;
+  font-size: .92em;
+  opacity: .6;
+  display: flex;
+  align-items: center;
+  gap: .5em;
+}
+.nf-dots { display: inline-flex; gap: 3px; }
+.nf-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  display: block;
+  animation: nf-blink 1.1s infinite ease-in-out;
+}
+.nf-dots i:nth-child(2) { animation-delay: .16s; }
+.nf-dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes nf-blink {
+  0%, 80%, 100% { opacity: .25; }
+  40% { opacity: 1; }
+}
+
+/* 隐藏态：老板键收起时正文不参与渲染成本 */
+.nf-hidden .nf-sec { display: none; }
+
+/* ---------------- 伪装回答的富文本 ---------------- */
+.rt-pre {
+  margin: .7em 0;
+  padding: .85em 1em;
+  background: #f6f7f9;
+  border: 1px solid #ececf0;
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.rt-pre code {
+  font-family: var(--font-mono);
+  white-space: pre;
+  color: #2f3238;
+}
+.rt-code {
+  font-family: var(--font-mono);
+  font-size: .9em;
+  background: #f2f3f6;
+  border-radius: 4px;
+  padding: .1em .35em;
+  color: #3a3f47;
+}
+.rt-ul {
+  margin: .5em 0;
+  padding-left: 1.25em;
+}
+.rt-ul li { margin: .25em 0; }
+
+/* 简易 Markdown 表格 */
+.rt-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: .7em 0;
+  font-size: .92em;
+}
+.rt-table th, .rt-table td {
+  border: 1px solid #e6e8ec;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.rt-table th { background: #f7f8fa; font-weight: 600; }

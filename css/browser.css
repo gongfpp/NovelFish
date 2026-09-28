@@ -1,6 +1,9 @@
 /* ============================================================
    browser.css — Chrome 浏览器窗口外框
-   默认铺满视口，模拟已最大化的 Chrome 窗口
+   两套皮肤由 .app[data-os="mac" | "win"] 切换：
+     · mac — 左上红黄绿交通灯、悬停显形、圆角标签页
+     · win — 右上最小化/最大化/关闭、Win11 风格按钮与悬停配色
+   默认铺满视口，模拟已最大化的 Chrome 窗口。
    ============================================================ */
 
 .chrome {
@@ -13,6 +16,10 @@
   position: relative;
 }
 
+/* 只在对应平台出现的元素 */
+.app[data-os="mac"] .win-only { display: none !important; }
+.app[data-os="win"] .mac-only { display: none !important; }
+
 /* ---------------- 标签栏 ---------------- */
 .chrome-tabbar {
   height: 40px;
@@ -20,12 +27,16 @@
   background: #dee1e6;
   display: flex;
   align-items: flex-end;
-  padding: 0 8px;
-  gap: 8px;
+  gap: 6px;
+  padding-left: 8px;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 31;
 }
 
+/* ---------------- macOS 交通灯 ---------------- */
 .chrome-lights {
   display: flex;
   gap: 8px;
@@ -33,22 +44,36 @@
   padding: 0 6px 0 4px;
   height: 100%;
   flex: 0 0 auto;
+  -webkit-app-region: no-drag;
 }
 .chrome-lights i {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  display: block;
-  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .14);
+  font-size: 8px;
+  line-height: 1;
+  color: rgba(0, 0, 0, .55);
+  font-weight: 700;
+  cursor: default;
 }
+.chrome-lights i::after { content: ""; }
+/* 悬停整组才显示叉/减/加，和真 Chrome 一致 */
+.chrome-lights:hover .l-red::after { content: "\00D7"; }
+.chrome-lights:hover .l-yellow::after { content: "\2212"; }
+.chrome-lights:hover .l-green::after { content: "+"; }
 .l-red { background: #ff5f57; }
 .l-yellow { background: #febc2e; }
 .l-green { background: #28c840; }
 
+/* ---------------- 标签页 ---------------- */
 .chrome-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
+  gap: 0;
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -60,31 +85,37 @@
   align-items: center;
   gap: 8px;
   height: 32px;
-  padding: 0 10px 0 12px;
-  border-radius: 9px 9px 0 0;
+  padding: 0 8px 0 12px;
+  border-radius: 8px 8px 0 0;
   background: transparent;
   max-width: 240px;
-  min-width: 150px;
+  min-width: 140px;
   font-size: 12.5px;
   color: #3c4043;
   position: relative;
   cursor: default;
+  -webkit-app-region: no-drag;
 }
+/* 非激活标签之间的细分隔线 */
+.chrome-tab + .chrome-tab::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: #c8ccd2;
+}
+.chrome-tab:hover::before,
+.chrome-tab.is-active::before,
+.chrome-tab.is-active + .chrome-tab::before { opacity: 0; }
+
 .chrome-tab.is-active {
   background: #fff;
   color: #202124;
-  box-shadow: 0 -1px 2px rgba(0, 0, 0, .05);
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, .06);
 }
-.chrome-tab.is-active::before,
-.chrome-tab.is-active::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 8px;
-  height: 8px;
-}
-.chrome-tab.is-active:hover { background: #fff; }
-.chrome-tab:not(.is-active):hover { background: rgba(255, 255, 255, .55); }
+.chrome-tab:not(.is-active):hover { background: rgba(255, 255, 255, .58); }
 
 .tab-favicon {
   width: 16px;
@@ -116,25 +147,60 @@
   justify-content: center;
   opacity: 0;
   transition: opacity .12s, background .12s;
+  flex: 0 0 auto;
 }
-.chrome-tab:hover .tab-close { opacity: 1; }
+.chrome-tab:hover .tab-close,
+.chrome-tab.is-active .tab-close { opacity: 1; }
 .tab-close:hover { background: rgba(0, 0, 0, .09); }
 
 .chrome-tab-new {
-  width: 26px;
-  height: 26px;
-  margin-bottom: 3px;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 2px 2px;
   border: 0;
   background: transparent;
   border-radius: 50%;
-  font-size: 15px;
-  color: #444;
+  font-size: 16px;
+  color: #3c4043;
   cursor: default;
   flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
 }
-.chrome-tab-new:hover { background: rgba(0, 0, 0, .07); }
+.chrome-tab-new:hover { background: rgba(0, 0, 0, .08); }
 
-.chrome-extra { flex: 0 0 90px; height: 100%; }
+.chrome-extra { flex: 1 1 auto; min-width: 20px; height: 100%; }
+
+/* ---------------- Windows 窗口控制 ---------------- */
+.win-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+  margin-left: auto;
+}
+.win-ctl {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  color: #1b1b1b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  padding: 0;
+  transition: background .12s, color .12s;
+}
+.win-ctl svg { display: block; }
+.win-ctl:hover { background: rgba(0, 0, 0, .06); }
+.win-ctl:active { background: rgba(0, 0, 0, .12); }
+.win-ctl.is-close:hover { background: #c42b1c; color: #fff; }
+.win-ctl.is-close:active { background: #b02617; color: #fff; }
 
 /* ---------------- 工具栏 ---------------- */
 .chrome-toolbar {
@@ -144,25 +210,33 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-bottom: 1px solid #e5e6e8;
   -webkit-user-select: none;
   user-select: none;
+  position: relative;   /* 四个弹出面板的定位基准 */
+  z-index: 30;
 }
 
 .chrome-nav { display: flex; gap: 2px; flex: 0 0 auto; }
 .nav-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border: 0;
   background: transparent;
   border-radius: 50%;
   font-size: 14px;
-  color: #4a4d51;
+  color: #444746;
   cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 .nav-btn:hover { background: #f1f3f4; }
+.nav-btn:active { background: #e6e9ec; }
 .nav-btn.is-disabled { color: #c4c7ca; }
+.nav-btn.is-disabled:hover { background: transparent; }
 
 .chrome-omnibox {
   flex: 1;
@@ -172,8 +246,8 @@
   border-radius: 999px;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 14px;
+  gap: 8px;
+  padding: 0 6px 0 14px;
   margin: 0 6px;
   font-size: 12.5px;
   color: #3c4043;
@@ -182,25 +256,56 @@
 .chrome-omnibox:hover { background: #ebeef1; }
 .omni-lock { display: flex; align-items: center; color: #5f6368; flex: 0 0 auto; }
 .omni-url {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-ui);
 }
+/* 地址栏右侧的收藏星，Windows Chrome 常显、macOS 悬停显形 */
+.omni-star {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #5f6368;
+  opacity: 0;
+  transition: opacity .14s;
+}
+.app[data-os="win"] .omni-star { opacity: 1; }
+.chrome-omnibox:hover .omni-star { opacity: 1; }
 
 .chrome-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
 .ext-icon {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   font-size: 13px;
-  color: #4a4d51;
+  color: #444746;
   cursor: default;
 }
 .ext-icon:hover { background: #f1f3f4; }
+/* 个人资料头像：真实 Chrome 是一个彩色圆形 */
+.chrome-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #6a8bff, #4d6bfe);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 3px;
+  cursor: default;
+}
 
 /* ---------------- 视口（皮肤挂载点） ---------------- */
 .chrome-viewport {
@@ -209,6 +314,9 @@
   position: relative;
   background: #fff;
   overflow: hidden;
+  /* 把皮肤的层叠上下文关进视口内，皮肤再大的 z-index 也压不到工具栏与弹出面板 */
+  z-index: 0;
+  isolation: isolate;
 }
 
 /* 切换皮肤时的过渡 */
@@ -219,7 +327,275 @@
 .app.is-fs .chrome-tabbar,
 .app.is-fs .chrome-toolbar { display: none; }
 
+/* ---------------- Windows 平台微调 ---------------- */
+/* Win11 的标签页顶部圆角更大，分隔线更淡 */
+.app[data-os="win"] .chrome-tab { border-radius: 10px 10px 0 0; font-size: 12px; }
+.app[data-os="win"] .chrome-tab + .chrome-tab::before { background: #cdd1d7; }
+.app[data-os="win"] .chrome-tabbar { gap: 4px; }
+.app[data-os="win"] .chrome-toolbar { padding-right: 6px; }
+/* Windows 上没有 macOS 那种交通灯留白 */
+.app[data-os="mac"] .chrome-tabbar { padding-left: 6px; }
+
+/* ============================================================
+   浏览器差异：Edge 才有的按钮 / Chrome 才有的按钮
+   ============================================================ */
+.app[data-browser="chrome"] .edge-only { display: none !important; }
+.app[data-browser="edge"] .chrome-only { display: none !important; }
+
+/* Edge 的工具栏按钮不在链接分组里，间距略大一些 */
+.app[data-browser="edge"] .chrome-nav { gap: 0; }
+.app[data-browser="edge"] .chrome-toolbar { gap: 6px; }
+.app[data-browser="edge"] .chrome-omnibox { margin: 0 2px; }
+/* Edge 的标签页圆角与 Chrome 不同 */
+.app[data-browser="edge"] .chrome-tab { border-radius: 8px 8px 0 0; }
+.app[data-browser="edge"] .chrome-tab.is-active { box-shadow: 0 -1px 2px rgba(0, 0, 0, .05); }
+
+/* 未注入图标前按钮是空的，先按尺寸占位，避免加载瞬间跳动 */
+.nav-btn svg, .ext-icon svg, .omni-site svg, .omni-star svg { display: block; }
+
+/* ---------------- 地址栏左侧的站点信息按钮 ---------------- */
+.omni-site {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  padding: 0;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+.omni-site:hover { background: rgba(0, 0, 0, .06); }
+.app[data-browser="edge"] .omni-site { color: #444746; }
+
+/* 地址栏右侧的星标同样是按钮 */
+.omni-star {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+}
+.omni-star:hover { background: rgba(0, 0, 0, .06); }
+.omni-star[data-on="1"] { color: #1a73e8; }
+
+/* 头像按钮重置（原先是 div，现在是 button） */
+button.chrome-avatar { border: 0; padding: 0; font-family: var(--font-ui); }
+button.ext-icon { border: 0; background: transparent; padding: 0; }
+.app[data-browser="edge"] button.chrome-avatar {
+  background: linear-gradient(140deg, #33b0a4, #0f7a70);
+}
+
+/* 按下（面板已展开）的按钮底色；头像不填灰，改成描一圈 */
+.chrome-toolbar .is-pressed:not(.chrome-avatar) { background: #e6e9ec !important; }
+.chrome-avatar.is-pressed { box-shadow: 0 0 0 3px #e6e9ec; }
+
+/* 真 Chrome 的工具栏按钮聚焦时不给描边，只用底色表示 */
+.chrome button:focus { outline: none; }
+.chrome button:focus-visible { background: #e6e9ec; }
+
+/* ============================================================
+   弹出面板（站点信息 / 扩展程序 / 个人资料 / 主菜单）
+   ============================================================ */
+.chrome-pop {
+  position: absolute;
+  top: 40px;
+  z-index: 60;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .12), 0 8px 28px rgba(0, 0, 0, .18);
+  padding: 5px 0;
+  font-size: 12.5px;
+  color: #202124;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  animation: popIn .12s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+@keyframes popIn { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } }
+
+.pop-site { left: 44px; width: 340px; padding: 14px 0 6px; }
+.pop-ext { right: 92px; width: 336px; }
+.pop-avatar { right: 52px; width: 306px; padding: 6px 0; }
+.pop-menu { right: 6px; width: 268px; padding: 6px 0 8px; }
+
+/* 面板通用行 */
+.pop-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0 14px;
+  height: 34px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: #202124;
+  text-align: left;
+  cursor: default;
+}
+.pop-item:hover { background: #f1f3f4; }
+.pop-ico {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #444746;
+}
+.pop-ico svg { display: block; }
+.pop-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-key { flex: 0 0 auto; color: #80868b; font-size: 12px; letter-spacing: .4px; }
+.pop-sub { flex: 0 0 auto; color: #80868b; font-size: 15px; line-height: 1; }
+.pop-sep { height: 1px; background: #e5e6e8; margin: 5px 0; }
+
+.pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px 10px;
+}
+.pop-head-title { font-size: 13px; font-weight: 500; color: #202124; }
+.pop-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #1a73e8;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: default;
+}
+.pop-link:hover { text-decoration: underline; }
+
+.pop-btn {
+  flex: 1;
+  border: 1px solid #dadce0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: #1a73e8;
+  cursor: default;
+  white-space: nowrap;
+}
+.pop-btn:hover { background: #f6f8ff; border-color: #c7d2fe; }
+
+/* ---------------- 站点信息面板 ---------------- */
+.pop-site-head { display: flex; align-items: center; gap: 8px; padding: 0 16px; }
+.pop-site-ico { display: flex; color: #5f6368; }
+.pop-site-ico svg { display: block; }
+.pop-site-title { font-size: 13.5px; font-weight: 500; color: #202124; }
+.pop-site-url {
+  padding: 4px 16px 10px;
+  font-size: 12px;
+  color: #5f6368;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- 扩展程序面板 ---------------- */
+.pop-ext-list { padding: 2px 0 4px; }
+.pop-ext-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 8px 0 14px;
+}
+.pop-ext-row:hover { background: #f1f3f4; }
+.pop-ext-ico {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pop-ext-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pop-ext-name { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-ext-desc {
+  font-size: 11.5px;
+  color: #80868b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-ext-act {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  padding: 0;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+.pop-ext-act svg { display: block; }
+.pop-ext-row:hover .pop-ext-act { opacity: 1; }
+.pop-ext-act:hover { background: rgba(0, 0, 0, .08); }
+/* 已固定到工具栏的插件，图钉常显且是实心蓝 */
+.pop-ext-act.is-on { opacity: 1; color: #1a73e8; }
+
+/* ---------------- 个人资料面板 ---------------- */
+.pop-profile { display: flex; gap: 12px; padding: 10px 16px 12px; }
+.pop-profile-avatar {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #6a8bff, #4d6bfe);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.app[data-browser="edge"] .pop-profile-avatar {
+  background: linear-gradient(140deg, #33b0a4, #0f7a70);
+}
+.pop-profile-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pop-profile-name { font-size: 13.5px; font-weight: 500; }
+.pop-profile-mail {
+  font-size: 12px;
+  color: #5f6368;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-profile-sync {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.pop-profile-sync svg { display: block; color: #1e8e3e; }
+.pop-profile-btns { display: flex; gap: 8px; padding: 0 16px 10px; }
+
 @media (max-width: 720px) {
   .chrome-extra { display: none; }
   .chrome-tab { min-width: 0; }
+  .pop-ext { right: 4px; width: min(336px, calc(100vw - 16px)); }
+  .pop-avatar { right: 4px; width: min(306px, calc(100vw - 16px)); }
+  .pop-site { left: 4px; width: min(340px, calc(100vw - 16px)); }
 }

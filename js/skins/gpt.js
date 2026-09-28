@@ -78,9 +78,12 @@
       var thread = root.querySelector('.gpt-thread');
       var inner = root.querySelector('.gpt-thread-inner');
       var input = root.querySelector('.gpt-input');
+      var histEl = root.querySelector('.gpt-hist');
 
       var currentThink = null;
       var currentMeta = null;
+
+      function refreshHistory() { histEl.innerHTML = buildHistory(api); }
 
       function userNode(text) {
         return '<div class="gpt-msg gpt-user-msg"><div class="gpt-bubble">' + esc(text) + '</div></div>';
@@ -128,12 +131,14 @@
 
       function rebuild(seedNew) {
         inner.innerHTML = '';
+
+        // 新建聊天走核心的会话模型，侧边栏列表才会同步长出来
+        if (seedNew) api.chat.create();
         var list = api.exchanges;
-        if (!list.length || seedNew) {
-          list.length = 0;
-          NF.camouflage.reset(0);
+        if (!list.length) {
+          api.makeExchange();
+          list = api.exchanges;
         }
-        if (!list.length) api.makeExchange();
 
         list.forEach(function (item, i) {
           collapseAll();
@@ -165,14 +170,20 @@
         }
         if (e.target.closest('.gpt-new')) {
           api.toast('已新建聊天，阅读位置不变');
-          NF.store.save();
           rebuild(true);
+          return;
+        }
+        var hist = e.target.closest('.gpt-hist-item');
+        if (hist && hist.dataset.conv) {
+          api.chat.select(hist.dataset.conv);
+          refreshHistory();
+          rebuild(false);
         }
       }
 
       function send() {
-        if (!input.value.trim() && input.value !== '') { /* 允许空发 */ }
-        appendExchange(api.makeExchange());
+        appendExchange(api.makeExchange(input.value.trim() ? { q: input.value.trim() } : undefined));
+        refreshHistory();
         input.value = '';
         input.style.height = 'auto';
       }
@@ -201,12 +212,14 @@
         currentMeta.textContent = '已深度思考（用时 ' + (8 + Math.round(info.percent * 0.9)) + ' 秒）';
       });
 
+      var offConv = api.on('conv', refreshHistory);
+
       rebuild(false);
       api.toast('小说在「已深度思考」里 · Esc 一键收起');
 
       CLEANUP = [function () {
         root.removeEventListener('click', onRootClick);
-        offPanic(); offProgress();
+        offPanic(); offProgress(); offConv();
       }];
     },
 
@@ -217,19 +230,15 @@
   });
 
   function buildHistory(api) {
-    var titles = api.historyTitles(10);
-    var groups = [
-      { label: '今天', items: titles.slice(0, 3) },
-      { label: '前天', items: titles.slice(3, 6) },
-      { label: '更早', items: titles.slice(6, 10) }
-    ];
+    var groups = api.chat.groups();
+    if (!groups.length) return '<div class="gpt-hist-empty">还没有对话</div>';
     return groups.map(function (g) {
-      if (!g.items.length) return '';
       return '<div class="gpt-hist-group">' +
         '<div class="gpt-hist-label">' + g.label + '</div>' +
-        g.items.map(function (t, i) {
-          return '<div class="gpt-hist-item' + (g.label === '今天' && i === 0 ? ' is-active' : '') + '">' +
-            NF.util.escapeHtml(t) + '</div>';
+        g.items.map(function (it) {
+          return '<div class="gpt-hist-item' + (it.active ? ' is-active' : '') +
+            '" data-conv="' + NF.util.escapeHtml(it.id) + '">' +
+            NF.util.escapeHtml(it.title) + '</div>';
         }).join('') +
         '</div>';
     }).join('');

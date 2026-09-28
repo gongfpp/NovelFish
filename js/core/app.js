@@ -32,8 +32,11 @@
     richText: U.richText,
     toast: NF.toast,
 
+    /* --- 伪装内容 --- */
     pickCamouflage: function () { return NF.camouflage.pick(state.mask.script); },
     historyTitles: function (n) { return NF.camouflage.historyTitles(n || 8); },
+
+    /* --- 小说 --- */
     toc: NF.novel.toc,
     chapterCount: NF.novel.chapterCount,
     chapterTitle: NF.novel.chapterTitle,
@@ -47,8 +50,52 @@
       return state.progress.chapter || 0;
     },
 
+    /* --- 会话 --- */
+    chat: NF.chat,
+    get convs() { return NF.chat.groups(state.sidebar.query); },
+    get activeConv() { return NF.chat.active(); },
+    selectConv: function (id) { return NF.chat.select(id); },
+    newConv: function () { return NF.chat.create(); },
+    /** 当前会话的伪装问答（皮肤直接渲染） */
+    get exchanges() { return NF.chat.exchanges; },
+    /**
+     * 取一组伪装问答并写入当前会话。
+     * @param {{ q?: string }} opts 传 q 时用调用方给的提问（用户在输入框里打的字）
+     */
+    makeExchange: function (opts) {
+      var item = NF.camouflage.pick(state.mask.script);
+      if (opts && opts.q) item = { q: opts.q, a: item.a, topic: item.topic };
+      NF.chat.append(item);
+      return item;
+    },
+    /** 把某条模板问答插到当前对话末尾（控制台的「对话模板」用） */
+    insertTemplate: function (scriptId, pairIndex) {
+      var p = NF.camouflage.pair(scriptId, pairIndex);
+      if (!p) return false;
+      NF.chat.append({ q: p.q, a: p.a });
+      NF.bus.emit('thread-reload');
+      return true;
+    },
+
+    /* --- 侧边栏 / 净读 / 外框 --- */
+    sidebarQuery: function () { return state.sidebar.query || ''; },
+    setSidebarQuery: function (v) { NF.store.patch({ sidebar: { query: String(v || '') } }); },
+    isSidebarOpen: function () { return !!state.sidebar.open; },
+    setSidebar: function (v) { NF.store.patch({ sidebar: { open: !!v } }); },
+    isReadOnly: function () { return !!state.mask.readOnly; },
+    setReadOnly: function (v) { NF.store.patch({ mask: { readOnly: !!v } }); },
+    setWebSearch: function (v) { NF.store.patch({ mask: { webSearch: !!v } }); },
+    setOpenThinking: function (v) { NF.store.patch({ mask: { openThinking: !!v } }); },
+    setOs: function (os) {
+      NF.store.patch({ mask: { os: os === 'win' ? 'win' : 'mac' } });
+      applyShell(); syncLookUI();
+    },
+    setBrowser: function (b) {
+      NF.store.patch({ mask: { browser: b === 'edge' ? 'edge' : 'chrome' } });
+      applyShell(); syncLookUI();
+    },
+
     isPanic: function () { return panic; },
-    setOpenThinking: function (v) { state.mask.openThinking = !!v; NF.store.save(); },
 
     /** 把小说挂进「深度思考」容器；返回 feed 控制器 */
     mountThinking: function (bodyEl, scroller, opts) {
@@ -72,23 +119,17 @@
     nextChapter: function () { return activeFeed ? activeFeed.next() : 0; },
     prevChapter: function () { return activeFeed ? activeFeed.prev() : 0; },
 
-    on: function (evt, fn) { return NF.bus.on(evt, fn); },
-    emit: function (evt, p) { NF.bus.emit(evt, p); },
+    /** 皮肤里的「上传文件」直接当换书入口用 */
+    loadNovelFile: function (file) { handleFiles([file]); },
 
-    /** 皮肤自己实现发送逻辑时，可直接拿一组伪装问答 */
-    makeExchange: function () {
-      var item = NF.camouflage.pick(state.mask.script);
-      state.progress.exchanges.push({ q: item.q, a: item.a });
-      NF.store.save();
-      return item;
-    },
-    get exchanges() { return state.progress.exchanges; }
+    on: function (evt, fn) { return NF.bus.on(evt, fn); },
+    emit: function (evt, p) { NF.bus.emit(evt, p); }
   };
 
   NF.api = api;
 
   /* ============================================================
-     阅读参数 → CSS 变量
+     阅读参数 / 外框外观 → DOM
      ============================================================ */
   function applyReadingVars() {
     var r = state.reading;
@@ -98,6 +139,14 @@
     root.setProperty('--nf-width', r.width + 'px');
   }
 
+  function applyShell() {
+    var app = $('app');
+    app.dataset.shell = state.mask.chrome ? 'chrome' : 'bare';
+    app.dataset.os = state.mask.os === 'win' ? 'win' : 'mac';
+    app.dataset.browser = state.mask.browser === 'edge' ? 'edge' : 'chrome';
+    if (NF.chromeFrame) NF.chromeFrame.apply();
+  }
+
   /* ============================================================
      小说装载
      ============================================================ */
@@ -105,9 +154,9 @@
     state.progress.chapter = 0;
     state.progress.loadedThrough = 0;
     state.progress.scrollTop = 0;
-    state.progress.exchanges = [];
+    state.progress.feedOffset = null;
+    NF.chat.reset();                 // 换书时重排伪装会话
     NF.store.save();
-    NF.camouflage.reset(0);
   }
 
   function setNovel(text, title, opts) {
@@ -279,7 +328,10 @@
     var open = arguments.length ? v : $('console').hidden;
     $('console').hidden = !open;
     $('scrim').hidden = !open;
-    if (open) syncConsoleProgress();
+    if (open) {
+      syncConsoleProgress();
+      syncMaskUI();
+    }
   }
 
   function syncBookMeta() {
@@ -341,6 +393,67 @@
     });
     $('selScript').innerHTML = opts.join('');
     $('selScript').value = state.mask.script;
+    $('tplCount').textContent = NF.camouflage.scripts.length + ' 类 · ' +
+      NF.camouflage.total + ' 组';
+  }
+
+  /** 对话模板清单：点一条就插到当前对话里 */
+  function buildTplList() {
+    $('tplList').innerHTML = NF.camouflage.raw.map(function (s) {
+      var head = '<div class="tpl-group-head">' + U.escapeHtml(s.name) +
+        ' · ' + s.pairs.length + ' 组</div>';
+      var items = s.pairs.map(function (p, i) {
+        return '<div class="tpl-item" data-script="' + s.id + '" data-pair="' + i + '">' +
+          '<span class="tpl-idx">' + (i + 1) + '</span>' +
+          '<span class="tpl-q">' + U.escapeHtml(p.q) + '</span>' +
+          '</div>';
+      }).join('');
+      return head + items;
+    }).join('');
+  }
+
+  /** 快捷键表随外框平台变化（⌘ / Ctrl） */
+  function buildHelp() {
+    var mac = state.mask.os !== 'win';
+    var mod = mac ? '&#8984;' : 'Ctrl';
+    var k = function (s) { return '<kbd>' + s + '</kbd>'; };
+    var rows = [
+      [k('Esc'), '老板键：收起 / 展开「深度思考」，视野回到伪装回答'],
+      [k(mod) + ' + ' + k('B'), '打开 / 收起左侧的聊天记录与对话列表'],
+      [k('\\'), '净读：一键折叠对话双方正文，只留思考框里的正文'],
+      [k('空格') + ' / ' + k('J'), '向下翻一屏'],
+      [k('Shift') + ' + ' + k('空格') + ' / ' + k('K'), '向上翻一屏'],
+      [k('&larr;') + ' / ' + k('&rarr;'), '上一章 / 下一章'],
+      [k('A'), '自动滚动开关'],
+      [k('+') + ' / ' + k('-'), '字号增减'],
+      [k(mod) + ' + ' + k(','), '打开控制台（伪装成设置面板）'],
+      [k('T'), '隐藏 / 显示浏览器外框'],
+      [k('F'), '真全屏（Windows 外框的「最大化」按钮同效）']
+    ];
+    $('helpKeys').innerHTML = rows.map(function (r) {
+      return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>';
+    }).join('');
+  }
+
+  /** 控制台里的开关 / 分段控件与真实状态对齐 */
+  function syncMaskUI() {
+    $('swBlur').setAttribute('aria-checked', String(!!state.mask.blurCollapse));
+    $('swOpen').setAttribute('aria-checked', String(!!state.mask.openThinking));
+    $('swReadOnly').setAttribute('aria-checked', String(!!state.mask.readOnly));
+    $('swChrome').setAttribute('aria-checked', String(!!state.mask.chrome));
+    syncLookUI();
+  }
+
+  function syncLookUI() {
+    Array.prototype.forEach.call($('segOs').children, function (b) {
+      b.classList.toggle('is-active', b.dataset.os === (state.mask.os === 'win' ? 'win' : 'mac'));
+    });
+    Array.prototype.forEach.call($('segBrowser').children, function (b) {
+      b.classList.toggle('is-active',
+        b.dataset.browser === (state.mask.browser === 'edge' ? 'edge' : 'chrome'));
+    });
+    $('inpProfileName').value = state.browser.name;
+    $('inpProfileEmail').value = state.browser.email;
   }
 
   function bindConsole() {
@@ -389,7 +502,7 @@
     });
 
     // 阅读参数
-    function bindRange(id, key, fmt, after) {
+    function bindRange(id, key, fmt) {
       var el = $(id);
       el.value = state.reading[key];
       var hint = $('v' + id.slice(1));
@@ -401,7 +514,6 @@
         NF.store.patch(patch);
         if (hint) hint.textContent = fmt(v);
         applyReadingVars();
-        if (after) after(v);
       });
     }
     bindRange('rFont', 'font', function (v) { return v + ' px'; });
@@ -430,9 +542,33 @@
     bindSwitch('swOpen', 'openThinking', 'mask', function () {
       mountSkin(state.skin, { remount: true, silent: true });
     });
-    bindSwitch('swChrome', 'chrome', 'mask', function (v) {
-      document.getElementById('app').dataset.shell = v ? 'chrome' : 'bare';
+    bindSwitch('swReadOnly', 'readOnly', 'mask');
+    bindSwitch('swChrome', 'chrome', 'mask', applyShell);
+
+    // 外框系统 / 浏览器
+    $('segOs').addEventListener('click', function (e) {
+      var btn = e.target.closest('.seg-item');
+      if (!btn) return;
+      api.setOs(btn.dataset.os);
+      NF.toast(btn.dataset.os === 'win' ? '外框已切换为 Windows' : '外框已切换为 macOS');
     });
+    $('segBrowser').addEventListener('click', function (e) {
+      var btn = e.target.closest('.seg-item');
+      if (!btn) return;
+      api.setBrowser(btn.dataset.browser);
+      NF.toast(btn.dataset.browser === 'edge' ? '外框已切换为 Edge' : '外框已切换为 Chrome');
+    });
+
+    // 浏览器资料（地址栏右侧头像与资料面板）
+    function bindProfile(id, key) {
+      $(id).addEventListener('input', function () {
+        state.browser[key] = this.value;
+        NF.store.save();
+        if (NF.chromeFrame) NF.chromeFrame.applyProfile();
+      });
+    }
+    bindProfile('inpProfileName', 'name');
+    bindProfile('inpProfileEmail', 'email');
 
     // 皮肤
     $('skinGrid').addEventListener('click', function (e) {
@@ -453,22 +589,45 @@
       NF.store.patch({ mask: { script: this.value } });
       NF.toast('伪装剧本已切换');
     });
+
+    // 对话模板
+    $('tplList').addEventListener('click', function (e) {
+      var item = e.target.closest('.tpl-item');
+      if (!item) return;
+      if (api.insertTemplate(item.dataset.script, +item.dataset.pair)) {
+        NF.toast('已插入一组模板问答');
+        openConsole(false);
+      }
+    });
   }
 
   /* ============================================================
      全局事件
      ============================================================ */
   function bindGlobal() {
-    // 快捷键
     document.addEventListener('keydown', function (e) {
       var t = e.target;
       var inField = t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
 
       if (e.key === 'Escape') {
+        // 浏览器外框的弹出面板优先吃掉 Esc（和真浏览器一致）
+        if (NF.chromeFrame && NF.chromeFrame.anyOpen()) {
+          NF.chromeFrame.closePopovers();
+          return;
+        }
         if (!$('console').hidden) { openConsole(false); return; }
         if (t && t.blur) t.blur();
         setPanic(!panic);
         NF.toast(panic ? '已收起（按 Esc 恢复）' : '已展开');
+        return;
+      }
+
+      // ⌘/Ctrl + B：聊天记录抽屉
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        var open = !api.isSidebarOpen();
+        api.setSidebar(open);
+        NF.bus.emit('sidebar', open);
         return;
       }
 
@@ -496,6 +655,13 @@
           e.preventDefault(); api.nextChapter(); syncConsoleProgress(); break;
         case 'ArrowLeft':
           e.preventDefault(); api.prevChapter(); syncConsoleProgress(); break;
+        case '\\': {
+          e.preventDefault();
+          var ro = !api.isReadOnly();
+          api.setReadOnly(ro);
+          NF.toast(ro ? '净读：已折叠对话正文' : '已恢复显示对话正文');
+          break;
+        }
         case 'a': case 'A': {
           var v = !state.reading.auto;
           NF.store.patch({ reading: { auto: v } });
@@ -518,7 +684,7 @@
             var on = !state.mask.chrome;
             NF.store.patch({ mask: { chrome: on } });
             $('swChrome').setAttribute('aria-checked', String(on));
-            document.getElementById('app').dataset.shell = on ? 'chrome' : 'bare';
+            applyShell();
           } else if (e.key === 'f' || e.key === 'F') {
             toggleFullscreen();
           } else {
@@ -549,6 +715,14 @@
       NF.store.saveNow();
     });
 
+    // 浏览器外框：双击标签栏＝最大化 / 还原；Windows 的最大化按钮同效
+    $('tabbar').addEventListener('dblclick', function (e) {
+      if (e.target.closest('.chrome-tab') || e.target.closest('.win-ctl')) return;
+      toggleFullscreen();
+    });
+    var maxBtn = document.querySelector('.win-ctl[data-win="max"]');
+    if (maxBtn) maxBtn.addEventListener('click', toggleFullscreen);
+
     // 全窗口拖放换书
     var dropEl = $('globalDrop');
     var hasFile = function (e) {
@@ -573,27 +747,30 @@
     // 进度回写控制台
     NF.bus.on('progress', syncConsoleProgress);
     NF.bus.on('doc', function () { syncBookMeta(); buildChapterList(); });
+    NF.bus.on('mask', syncMaskUI);
   }
 
   function toggleFullscreen() {
     if (document.fullscreenElement) {
       document.exitFullscreen();
-      document.getElementById('app').classList.remove('is-fs');
+      $('app').classList.remove('is-fs');
     } else {
       var el = document.documentElement;
       if (el.requestFullscreen) el.requestFullscreen().catch(function () { /* 用户拒绝 */ });
-      document.getElementById('app').classList.add('is-fs');
+      $('app').classList.add('is-fs');
     }
   }
 
   document.addEventListener('fullscreenchange', function () {
-    if (!document.fullscreenElement) document.getElementById('app').classList.remove('is-fs');
+    if (!document.fullscreenElement) $('app').classList.remove('is-fs');
   });
 
   /* ============================================================
      启动
      ============================================================ */
   function boot() {
+    NF.chat.ensure();
+
     var text = state.novel.text || NF.data.sampleNovel.text;
     var title = state.novel.title || NF.data.sampleNovel.title;
     NF.novel.parse(text, title);
@@ -603,19 +780,28 @@
     state.progress.chapter = U.clamp(state.progress.chapter || 0, 0, Math.max(0, n - 1));
     state.progress.loadedThrough = U.clamp(state.progress.loadedThrough || 0,
       state.progress.chapter, Math.max(0, n - 1));
-    NF.camouflage.reset((state.progress.exchanges || []).length);
 
-    document.getElementById('app').dataset.shell = state.mask.chrome ? 'chrome' : 'bare';
+    applyShell();
 
     buildChapterList();
     syncBookMeta();
     buildSkinGrid();
     buildScriptSelect();
+    buildTplList();
+    buildHelp();
     bindConsole();
     bindGlobal();
     bindAutoPause();
     applyReadingVars();
     syncConsoleProgress();
+    syncMaskUI();
+
+    // 浏览器外框：图标注入、弹出面板、外观联动（必须在 mountSkin 之前接好）
+    NF.chromeFrame.init({
+      state: function () { return state; },
+      patch: function (p) { NF.store.patch(p); },
+      toast: NF.toast
+    });
 
     NF.bus.on('open-console', function () { openConsole(true); });
 
