@@ -131,7 +131,7 @@ window.NovelFish = window.NovelFish || {};
   /* ---------------- 默认状态 ---------------- */
   function defaultState() {
     return {
-      version: 5,
+      version: 6,
       skin: 'deepseek',
       /* 正文默认排版对齐 DeepSeek 官网「深度思考」的规格：14px / 行距 1.7（=24px）/ 栏宽 840px */
       reading: { font: 14, line: 1.7, width: 840, auto: false, speed: 1 },
@@ -142,7 +142,20 @@ window.NovelFish = window.NovelFish || {};
         chrome: true,          // 显示浏览器外框
         os: 'mac',             // 外框系统风格：mac | win
         browser: 'chrome',     // 外框浏览器：chrome | edge
-        webSearch: false       // 输入框里的「智能搜索」开关
+        webSearch: false,      // 输入框里的「智能搜索」开关
+        /* 阅读触发词：提问里出现任一个，就走伪装剧本（深度思考里是小说）。
+           留空表示「一律走剧本」——也就是没有模型服务时的默认行为。 */
+        triggers: ['继续', '下一章', '接着读'],
+        /* 用户自建的伪装剧本，见 js/core/camouflage.js */
+        customScripts: []
+      },
+      /* 真实模型对话。services 为空时，不含触发词的提问也退回伪装剧本，
+         保证刚打开、还没配 key 的时候应用依然完整可用。 */
+      model: {
+        services: [],          // [{ id, name, baseUrl, apiKey, model }]
+        activeId: '',          // 当前使用的服务
+        stream: true,          // 逐字流式输出
+        history: 12            // 随请求带给模型的历史轮数（一问一答算一轮）
       },
       /* 浏览器外框里显示的资料：地址栏头像、资料面板、标签页标题 */
       browser: {
@@ -243,6 +256,12 @@ window.NovelFish = window.NovelFish || {};
       state.browser.name = DEFAULT_PROFILE_NAME;
       if (state.browser.email === LEGACY_PROFILE_EMAIL) state.browser.email = DEFAULT_PROFILE_EMAIL;
       state.browser.avatar = '';
+    }
+
+    // 阅读触发词是这一版才有的字段：老存档补上默认值。
+    // 不补的话，用户一旦配上模型，所有提问都会被送去模型，小说再也回不来。
+    if (from < 6 && !(state.mask.triggers || []).length) {
+      state.mask.triggers = defaultState().mask.triggers;
     }
 
     state.version = defaultState().version;

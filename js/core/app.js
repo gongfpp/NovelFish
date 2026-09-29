@@ -60,8 +60,8 @@
     /** 当前会话的伪装问答（皮肤直接渲染） */
     get exchanges() { return NF.chat.exchanges; },
     /**
-     * 取一组伪装问答并写入当前会话。
-     * @param {{ q?: string }} opts 传 q 时用调用方给的提问（用户在输入框里打的字）
+     * 取一组伪装问答。传 q 时用调用方给的提问（用户在输入框里打的字）。
+     * 老的「一键插一条」路径还在用它；真正走输入框的那条走 runTurn()。
      */
     makeExchange: function (opts) {
       var item = NF.camouflage.pick(state.mask.script);
@@ -143,10 +143,16 @@
     /** 皮肤在用户自己点开「深度思考」时调它：解除收起态，回到收起前的阅读位置 */
     resume: function () { setPanic(false); },
 
-    /** 把小说挂进「深度思考」容器；返回 feed 控制器 */
+    /**
+     * 把小说挂进「深度思考」容器；返回 feed 控制器。
+     * 传 null 表示「这一轮不挂书」（最新一条是模型消息时）——
+     * 仍然要走一遍销毁，否则旧 feed 会留在已经拆掉的节点上。
+     */
     mountThinking: function (bodyEl, scroller, opts) {
       feeds.forEach(function (f) { try { f.destroy(); } catch (e) { /* noop */ } });
       feeds = [];
+      activeFeed = null;
+      if (!bodyEl) return null;
       var feed = NF.feed.create(bodyEl, scroller, opts || {});
       feeds.push(feed);
       activeFeed = feed;
@@ -192,6 +198,82 @@
       accept: acceptShare,
       parse: NF.share.parse
     },
+
+    /* ============================================================
+       模型服务（真实对话）
+       ============================================================ */
+    model: {
+      list: NF.llm.services,
+      active: NF.llm.active,
+      presets: NF.llm.presets,
+      /** 配好了 baseUrl + 模型名才算能用 */
+      ready: NF.llm.ready,
+      get stream() { return !!state.model.stream; },
+
+      save: function (svc) { var id = NF.llm.save(svc); editingSvcId = id; syncModelUI(); return id; },
+      remove: function (id) {
+        var ok = NF.llm.remove(id);
+        if (editingSvcId === id) editingSvcId = '';
+        syncModelUI();
+        return ok;
+      },
+      /** 切到某条服务；面板跟着把它放进编辑区，省得再点一次 */
+      setActive: function (id) {
+        var ok = NF.llm.setActive(id);
+        if (ok && id) editingSvcId = id;
+        syncModelUI();
+        return ok;
+      },
+      setStream: function (v) {
+        NF.store.patch({ model: { stream: !!v } });
+        syncModelUI();
+      },
+      get history() { return Number(state.model.history) || 12; },
+      setHistory: function (v) {
+        NF.store.patch({ model: { history: U.clamp(Math.round(Number(v) || 12), 0, 40) } });
+      },
+      probe: NF.llm.probe
+    },
+
+    /* ============================================================
+       伪装剧本（内置 + 用户自建）
+       ============================================================ */
+    scripts: {
+      list: function () { return NF.camouflage.scripts; },
+      save: function (script) {
+        var id = NF.camouflage.saveCustom(script);
+        refreshScriptUI();
+        return id;
+      },
+      remove: function (id) {
+        var ok = NF.camouflage.removeCustom(id);
+        if (ok) refreshScriptUI();
+        return ok;
+      },
+      get triggers() { return (state.mask.triggers || []).slice(); },
+      setTriggers: function (v) {
+        NF.store.patch({ mask: { triggers: NF.camouflage.parseTriggers(v) } });
+        refreshScriptUI();
+      },
+      /** 这个名字的提问会不会走剧本；命中返回命中的那个词，否则返回空串 */
+      match: function (text) {
+        var hit = NF.camouflage.matchTrigger(text);
+        return hit ? hit.trigger : '';
+      }
+    },
+
+    /* ============================================================
+       一轮对话
+       ------------------------------------------------------------
+       判断顺序（这是整个伪装的核心逻辑）：
+         提问里出现触发词  → 剧本模式：深度思考里放小说，回答取自剧本
+         否则配了模型      → 模型模式：深度思考里放模型的真实推理
+         否则（没配模型）  → 退回剧本模式，保证开箱即用
+       ============================================================ */
+    runTurn: runTurn,
+    abortTurn: abortTurn,
+    /** 当前有没有一轮正在流式输出 */
+    isStreaming: function () { return !!turn; },
 
     on: function (evt, fn) { return NF.bus.on(evt, fn); },
     emit: function (evt, p) { NF.bus.emit(evt, p); }
@@ -240,6 +322,7 @@
   var STORE_TEXT_MAX = 1.6 * 1024 * 1024;   // 正文落盘上限，超出则本次不持久化
 
   function resetProgress() {
+    abortTurn();                     // 换书等于换会话，别让上一本书的回复写进新书里
     state.progress.chapter = 0;
     state.progress.loadedThrough = 0;
     state.progress.scrollTop = 0;
@@ -395,6 +478,233 @@
   }
 
   /* ============================================================
+     一轮对话
+     ------------------------------------------------------------
+     核心负责「这一轮该走剧本还是走模型、内容从哪来、什么时候落盘」，
+     皮肤只负责把回调里的增量画到屏幕上。两边靠下面这组回调对接：
+
+       onStart(info)          节点已经建好，可以开始画了
+       onThought(elapsed)     剧本模式：思考的「拍子」到了，表头可以落定
+       onReasoning(delta,acc) 模型模式：思考增量
+       onContent(delta,acc)   正文增量（两种模式都有，皮肤一套代码）
+       onDone(info)           结束（含被取消 / 出错），info 里有 error
+     ============================================================ */
+
+  var THINK_BEAT = 700;      // 剧本模式模拟「思考」的停顿，别让人干等
+  var TYPE_INTERVAL = 18;    // 打字机的一帧
+  var TYPE_FRAMES = 90;      // 一段回答大约分多少帧吐完（长短自适应）
+
+  var turn = null;           // 正在跑的那一轮
+
+  /** 掐断正在跑的一轮。发新消息、切会话、换书之前都会调 */
+  function abortTurn() {
+    if (!turn) return false;
+    turn.cancelled = true;
+    if (turn.timer) { clearTimeout(turn.timer); turn.timer = null; }
+    if (turn.abortHttp) turn.abortHttp();
+    turn = null;
+    return true;
+  }
+
+  /** 按帧把整段回答吐出去，长短自适应：短的一句几个字，长的每帧多带一点 */
+  function typeOut(job, full, onDelta, done) {
+    var i = 0;
+    var step = Math.max(1, Math.ceil(full.length / TYPE_FRAMES));
+    function tick() {
+      if (job.cancelled) { done(true); return; }
+      var from = i;
+      i = Math.min(full.length, i + step);
+      if (i > from) onDelta(full.slice(from, i), full.slice(0, i));
+      if (i >= full.length) { job.timer = null; done(false); return; }
+      job.timer = setTimeout(tick, TYPE_INTERVAL);
+    }
+    tick();
+  }
+
+  /** 把这轮之前的对话整理成请求体里的 messages */
+  function buildMessages(upTo, text) {
+    var list = NF.chat.exchanges;
+    var pairs = Math.max(0, Number(state.model.history) || 0);
+    var start = Math.max(0, list.length - pairs);
+    var out = [];
+    for (var i = start; i < list.length; i++) {
+      if (i === upTo) break;
+      var it = list[i];
+      if (!it.q) continue;
+      out.push({ role: 'user', content: it.q });
+      if (it.a) out.push({ role: 'assistant', content: it.a });
+    }
+    out.push({ role: 'user', content: text });
+    return out;
+  }
+
+  /** 内容只留在本地看，所以截断一下再拼进气泡，别把界面撑破 */
+  function shortMsg(err) {
+    var s = String((err && err.message) || err || '未知错误').replace(/\s+/g, ' ').trim();
+    return s.length > 120 ? s.slice(0, 120) + '…' : s;
+  }
+
+  function runTurn(opts) {
+    opts = opts || {};
+    abortTurn();
+
+    var replaceIndex = typeof opts.replaceIndex === 'number' ? opts.replaceIndex : -1;
+    var prev = replaceIndex >= 0 ? NF.chat.at(replaceIndex) : null;
+    var text = String(opts.text || (prev ? prev.q : '') || '').trim();
+
+    var hit = text ? NF.camouflage.matchTrigger(text) : null;
+    var service = NF.llm.ready() ? NF.llm.active() : null;
+    var useModel = !!text && !hit && !!service;
+
+    var mode = useModel ? 'model' : 'novel';
+    var script = hit ? hit.script : null;
+
+    /* 重新生成留在原剧本里换一条。否则「混合」模式下每点一次都会跳到别的
+       剧本去，同一个会话里的话题会散掉。 */
+    if (replaceIndex >= 0 && prev && prev.mode !== 'model' && !script) {
+      var was = null;
+      NF.camouflage.raw.forEach(function (x) { if (x.id === prev.scriptId) was = x; });
+      if (was) script = was;
+    }
+    var pickFrom = script ? script.id : state.mask.script;
+
+    // 空输入（直接点发送）：连提问一起从剧本里挑一组，纯伪装
+    var preset = null;
+    if (!text) {
+      preset = NF.camouflage.pick(pickFrom);
+      text = preset.q;
+    }
+
+    /* 深度思考默认开合：
+         模型模式永远展开（需求就是「展示实际模型中的深度思考」）
+         剧本模式听剧本自己的开关，剧本没表态则跟随全局设置 */
+    var thinkOpen = useModel ? true
+      : (script ? script.thinkOpen !== false : !!state.mask.openThinking);
+
+    var index;
+    var convId = '';
+    if (replaceIndex >= 0) {
+      convId = NF.chat.activeId();
+      NF.chat.clear(replaceIndex, convId);
+      index = replaceIndex;
+    } else {
+      index = NF.chat.begin({
+        q: text, mode: mode, thinkOpen: thinkOpen,
+        scriptId: script ? script.id : ''
+      });
+      convId = NF.chat.activeId();
+    }
+
+    var job = { cancelled: false, timer: null, abortHttp: null };
+    turn = job;
+
+    var info = {
+      index: index,
+      convId: convId,
+      mode: mode,
+      q: text,
+      thinkOpen: thinkOpen,
+      script: script,
+      service: service,
+      regenerate: replaceIndex >= 0
+    };
+    if (opts.onStart) { try { opts.onStart(info); } catch (e) { console.error(e); } }
+
+    var promise = useModel
+      ? modelRound(job, info, opts, text)
+      : scriptRound(job, info, opts, preset, pickFrom);
+
+    return { index: index, info: info, abort: abortTurn, promise: promise };
+  }
+
+  /* --- 剧本模式：思考放小说，回答是伪装内容，逐字吐出来 --- */
+  function scriptRound(job, info, opts, preset, pickFrom) {
+    var index = info.index;
+    var picked = preset && preset.a != null ? preset : NF.camouflage.pick(pickFrom);
+    var answer = String(picked.a == null ? '' : picked.a);
+
+    // 「用时 N 秒」：由内容长短推一个像样的数，别每次都是同一个值
+    var elapsed = U.clamp(Math.round(5 + (info.q.length + answer.length) / 90), 4, 42);
+
+    return new Promise(function (resolve) {
+      job.timer = setTimeout(function () {
+        job.timer = null;
+        if (job.cancelled) { resolve(info); return; }
+        info.elapsed = elapsed;
+        if (opts.onThought) { try { opts.onThought(elapsed, info); } catch (e) { console.error(e); } }
+
+        typeOut(job, answer, function (delta, acc) {
+          if (opts.onContent) { try { opts.onContent(delta, acc, info); } catch (e) { console.error(e); } }
+        }, function (cancelled) {
+          if (!cancelled) {
+            NF.chat.finish(index, {
+              a: answer, mode: 'novel', elapsed: elapsed,
+              scriptId: info.script ? info.script.id : '', thinkOpen: info.thinkOpen
+            }, info.convId);
+            info.answer = answer;
+          }
+          info.cancelled = !!cancelled;
+          if (opts.onDone) { try { opts.onDone(info); } catch (e) { console.error(e); } }
+          if (turn === job) turn = null;
+          resolve(info);
+        });
+      }, THINK_BEAT);
+    });
+  }
+
+  /* --- 模型模式：思考是模型的真实推理，回答是模型的真实输出 --- */
+  function modelRound(job, info, opts, text) {
+    var index = info.index;
+    var got = { reasoning: '', content: '' };
+    var t0 = Date.now();
+
+    var req = NF.llm.chat({
+      service: info.service,
+      messages: buildMessages(index, text),
+      onReasoning: function (delta, full) {
+        got.reasoning = full;
+        if (opts.onReasoning) { try { opts.onReasoning(delta, full, info); } catch (e) { console.error(e); } }
+      },
+      onContent: function (delta, full) {
+        got.content = full;
+        if (opts.onContent) { try { opts.onContent(delta, full, info); } catch (e) { console.error(e); } }
+      }
+    });
+    job.abortHttp = req.abort;
+
+    return req.promise.then(function (acc) {
+      var elapsed = Math.max(1, Math.round((Date.now() - t0) / 1000));
+      NF.chat.finish(index, {
+        a: acc.content, reasoning: acc.reasoning,
+        mode: 'model', elapsed: elapsed, thinkOpen: true
+      }, info.convId);
+      info.answer = acc.content;
+      info.reasoning = acc.reasoning;
+      info.elapsed = elapsed;
+      if (opts.onDone) { try { opts.onDone(info); } catch (e) { console.error(e); } }
+      if (turn === job) turn = null;
+      return info;
+    }, function (err) {
+      var aborted = err && (err.kind === 'abort');
+      // 已经吐出来的部分保留下来：真人按了「停止」也是留下半截回答
+      NF.chat.finish(index, {
+        a: got.content || (aborted ? '' : '（请求失败：' + shortMsg(err) + '）'),
+        reasoning: got.reasoning,
+        mode: 'model',
+        elapsed: Math.max(1, Math.round((Date.now() - t0) / 1000)),
+        thinkOpen: true
+      }, info.convId);
+      info.answer = got.content;
+      info.reasoning = got.reasoning;
+      info.cancelled = aborted;
+      info.error = aborted ? null : err;
+      if (opts.onDone) { try { opts.onDone(info); } catch (e) { console.error(e); } }
+      if (turn === job) turn = null;
+      return info;
+    });
+  }
+
+  /* ============================================================
      皮肤装载
      ============================================================ */
   /**
@@ -545,6 +855,7 @@
       if (pane) showPane(pane);
       syncConsoleProgress();
       syncMaskUI();
+      syncModelUI();
     }
   }
 
@@ -612,13 +923,82 @@
   function buildScriptSelect() {
     var opts = ['<option value="auto">混合（轮流使用全部剧本）</option>'];
     NF.camouflage.scripts.forEach(function (s) {
-      opts.push('<option value="' + s.id + '">' + U.escapeHtml(s.name) +
-        '（' + s.count + ' 组）</option>');
+      opts.push('<option value="' + U.escapeHtml(s.id) + '">' + U.escapeHtml(s.name) +
+        '（' + s.count + ' 组' + (s.custom ? ' · 自建' : '') + '）</option>');
     });
-    $('selScript').innerHTML = opts.join('');
-    $('selScript').value = state.mask.script;
+    var sel = $('selScript');
+    sel.innerHTML = opts.join('');
+    sel.value = state.mask.script;
+    // 选中的剧本被删掉之后，select 会落到空值上，回到「混合」
+    if (sel.value !== state.mask.script) sel.value = 'auto';
     $('tplCount').textContent = NF.camouflage.scripts.length + ' 类 · ' +
       NF.camouflage.total + ' 组';
+  }
+
+  /** 剧本 / 触发词变动后的统一刷新（下拉、模板清单、触发词输入框） */
+  function refreshScriptUI() {
+    buildScriptSelect();
+    buildTplList();
+    $('inpTriggers').value = (state.mask.triggers || []).join('，');
+  }
+
+  /* ============================================================
+     模型服务 UI
+     ============================================================ */
+  /* '' 跟随当前服务 / null 新建 / 其它 = 正在编辑的那条 */
+  var editingSvcId = '';
+
+  function shortHost(url) {
+    var s = String(url || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    return s || '（没填接口地址）';
+  }
+
+  function buildPresetSelect(current) {
+    var hit = 'custom';
+    NF.llm.presets().forEach(function (p) {
+      if (p.baseUrl && current && current.replace(/\/+$/, '') === p.baseUrl) hit = p.id;
+    });
+    $('svcPreset').innerHTML = NF.llm.presets().map(function (p) {
+      return '<option value="' + p.id + '">' + U.escapeHtml(p.name) + '</option>';
+    }).join('');
+    $('svcPreset').value = hit;
+  }
+
+  function syncModelUI() {
+    var list = NF.llm.services();
+    var act = NF.llm.active();
+
+    if (editingSvcId === '') editingSvcId = act ? act.id : null;
+    var el = editingSvcId ? NF.llm.find(editingSvcId) : null;
+    if (editingSvcId && !el) editingSvcId = null;      // 正在编辑的那条被删了
+
+    $('svcCount').textContent = list.length ? list.length + ' 条' : '';
+    $('svcList').innerHTML = list.length ? list.map(function (s) {
+      var on = act && act.id === s.id;
+      return '<div class="svc-item' + (on ? ' is-active' : '') +
+        (s.id === editingSvcId ? ' is-editing' : '') +
+        '" data-svc="' + U.escapeHtml(s.id) + '">' +
+        '<span class="svc-dot"></span>' +
+        '<span class="svc-info">' +
+          '<span class="svc-name">' + U.escapeHtml(s.name) +
+            (on ? '<span class="skin-tag is-live">使用中</span>' : '') + '</span>' +
+          '<span class="svc-desc">' + U.escapeHtml(s.model || '（没填模型名）') +
+            ' · ' + U.escapeHtml(shortHost(s.baseUrl)) + '</span>' +
+        '</span>' +
+        '</div>';
+    }).join('') : '<div class="svc-empty">还没有配置。所有提问都会走伪装剧本，' +
+      '「深度思考」里始终是小说。</div>';
+
+    $('svcName').value = el ? el.name : '';
+    $('svcBase').value = el ? el.baseUrl : '';
+    $('svcKey').value = el ? el.apiKey : '';
+    $('svcModel').value = el ? el.model : '';
+    $('svcExtra').value = el ? el.extra : '';
+    $('svcEditing').textContent = el ? el.name : '新服务';
+    $('btnSvcDel').disabled = !el;
+    buildPresetSelect(el ? el.baseUrl : '');
+
+    $('swStream').setAttribute('aria-checked', String(!!state.model.stream));
   }
 
   /** 对话模板清单：点一条就插到当前对话里 */
@@ -653,6 +1033,7 @@
       [k(mod) + ' + ' + k('F'), '页内查找'],
       [k(mod) + ' + ' + k('+') + ' / ' + k('-') + ' / ' + k('0'), '浏览器缩放'],
       [k(mod) + ' + ' + k('T'), '新标签页'],
+      ['发消息', '含「阅读触发词」→ 走伪装剧本，深度思考里是小说；不含则发给「模型」里配的服务'],
       ['分享链接', '顶栏「分享」出的链接自带这本书；把它粘回窗口即载入'],
       [k('T'), '隐藏 / 显示浏览器外框'],
       [k('F'), '真全屏（Windows 外框的「最大化」按钮同效）']
@@ -852,11 +1233,47 @@
       mountSkin(id).then(function () { openConsole(false); });
     });
 
-    // 剧本
+    // 剧本：切换 / 触发词 / 增删改
     $('selScript').addEventListener('change', function () {
       NF.store.patch({ mask: { script: this.value } });
       NF.toast('伪装剧本已切换');
     });
+
+    $('inpTriggers').addEventListener('change', function () {
+      api.scripts.setTriggers(this.value);
+      NF.toast('阅读触发词：' + (state.mask.triggers.join('、') || '（空，一律走剧本）'));
+    });
+
+    $('btnScriptNew').addEventListener('click', function () { openScriptEditor(null, false); });
+
+    $('btnScriptEdit').addEventListener('click', function () {
+      var id = $('selScript').value;
+      if (id === 'auto') { NF.toast('先在下拉里选中一个具体剧本'); return; }
+      var s = null;
+      NF.camouflage.scripts.forEach(function (x) { if (x.id === id) s = x; });
+      if (!s) { NF.toast('没找到这个剧本'); return; }
+      NF.camouflage.reload();
+      var full = null;
+      NF.camouflage.raw.forEach(function (x) { if (x.id === id) full = x; });
+      openScriptEditor(full, !s.custom);
+    });
+
+    $('btnScriptDel').addEventListener('click', function () {
+      var id = $('selScript').value;
+      if (id === 'auto') { NF.toast('先在下拉里选中一个具体剧本'); return; }
+      var s = null;
+      NF.camouflage.scripts.forEach(function (x) { if (x.id === id) s = x; });
+      if (!s) return;
+      if (!s.custom) { NF.toast('内置剧本删不掉，可以「编辑」后另存为副本'); return; }
+      api.scripts.remove(id);
+      NF.toast('已删除剧本「' + s.name + '」');
+    });
+
+    $('seThink').addEventListener('click', function () {
+      this.setAttribute('aria-checked', this.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+    });
+    $('btnScriptSave').addEventListener('click', saveScriptFromEditor);
+    $('btnScriptCancel').addEventListener('click', closeScriptEditor);
 
     // 对话模板
     $('tplList').addEventListener('click', function (e) {
@@ -867,6 +1284,151 @@
         openConsole(false);
       }
     });
+
+    // ---- 模型服务 ----
+    $('svcList').addEventListener('click', function (e) {
+      var item = e.target.closest('.svc-item');
+      if (!item) return;
+      editingSvcId = item.dataset.svc;
+      api.model.setActive(editingSvcId);      // 点一下就切过去用，省掉一次「设为当前」
+      syncModelUI();
+    });
+
+    $('btnSvcAdd').addEventListener('click', function () {
+      editingSvcId = null;
+      syncModelUI();
+      $('svcName').focus();
+    });
+
+    $('svcPreset').addEventListener('change', function () {
+      var p = NF.llm.preset(this.value);
+      if (!p) return;
+      if (p.baseUrl) $('svcBase').value = p.baseUrl;
+      if (p.model) $('svcModel').value = p.model;
+      if (!$('svcName').value.trim()) $('svcName').value = p.name;
+    });
+
+    $('btnSvcSave').addEventListener('click', function () {
+      var svc = readServiceForm();
+      if (!svc.baseUrl) { NF.toast('先把接口地址填上'); return; }
+      if (!svc.model) { NF.toast('先把模型名填上'); return; }
+      editingSvcId = api.model.save(svc);
+      api.model.setActive(editingSvcId);
+      syncModelUI();
+      NF.toast('已保存并切换到「' + svc.name + '」');
+    });
+
+    $('btnSvcTest').addEventListener('click', function () {
+      var svc = readServiceForm();
+      if (!svc.baseUrl) { NF.toast('先把接口地址填上'); return; }
+      if (!svc.model) { NF.toast('先把模型名填上'); return; }
+      var btn = this;
+      btn.disabled = true;
+      var pending = NF.toast('正在测试连接…', 22000);
+      api.model.probe(svc).then(function (r) {
+        btn.disabled = false;
+        NF.toast.hide(pending);
+        NF.toast(r.message, r.ok ? 3000 : 8000);
+      });
+    });
+
+    $('btnSvcDel').addEventListener('click', function () {
+      if (!editingSvcId) return;
+      api.model.remove(editingSvcId);
+      editingSvcId = '';
+      syncModelUI();
+      NF.toast('已删除该服务');
+    });
+
+    $('swStream').addEventListener('click', function () {
+      api.model.setStream(!state.model.stream);
+      NF.toast(state.model.stream ? '流式输出已开启' : '流式输出已关闭');
+    });
+  }
+
+  /** 把模型面板上那几个输入框读成一条服务 */
+  function readServiceForm() {
+    var base = $('svcBase').value.trim();
+    return {
+      id: editingSvcId || '',
+      name: $('svcName').value.trim() || shortHost(base) || '未命名服务',
+      baseUrl: base,
+      apiKey: $('svcKey').value.trim(),
+      model: $('svcModel').value.trim(),
+      extra: $('svcExtra').value.trim()
+    };
+  }
+
+  /* ============================================================
+     剧本编辑器
+     ============================================================ */
+  var editingScriptId = '';      // '' 表示新建；否则是自建剧本的 id
+
+  function pairsToText(pairs) {
+    return pairs.map(function (p) { return 'Q: ' + p.q + '\nA: ' + p.a; }).join('\n\n');
+  }
+
+  /** 「Q: / A:」文本 → 问答数组。非标记行续接到上一段，这样回答能写多行 */
+  function textToPairs(text) {
+    var out = [];
+    var cur = null;
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var m;
+      if ((m = /^\s*[Qq]\s*[:：]\s*(.*)$/.exec(line))) {
+        cur = { q: m[1].trim(), a: '', inA: false };
+        out.push(cur);
+        return;
+      }
+      if ((m = /^\s*[Aa]\s*[:：]\s*(.*)$/.exec(line))) {
+        if (!cur) { cur = { q: '', a: '', inA: false }; out.push(cur); }
+        cur.a = m[1].replace(/\s+$/, '');
+        cur.inA = true;
+        return;
+      }
+      if (!cur) {
+        if (line.trim()) { cur = { q: line.trim(), a: '', inA: false }; out.push(cur); }
+        return;
+      }
+      if (cur.inA) cur.a += '\n' + line.replace(/\s+$/, '');
+      else cur.q += ' ' + line.trim();
+    });
+    return out.filter(function (p) { return p.q && p.a; }).map(function (p) {
+      return { q: p.q.trim(), a: p.a.replace(/\n+$/, '') };
+    });
+  }
+
+  function openScriptEditor(script, asCopy) {
+    editingScriptId = script && script.custom ? script.id : '';
+    $('seTitle').textContent = script
+      ? (asCopy ? '另存为副本：' + script.name : '编辑剧本：' + script.name)
+      : '新建剧本';
+    $('seName').value = script ? (asCopy ? script.name + ' 副本' : script.name) : '';
+    $('seTopic').value = script ? script.topic : '';
+    $('seTriggers').value = script ? script.triggers.join('，') : '';
+    $('seThink').setAttribute('aria-checked', String(script ? script.thinkOpen !== false : true));
+    $('sePairs').value = script ? pairsToText(script.pairs) : '';
+    $('scriptEditor').hidden = false;
+    $('seName').focus();
+  }
+
+  function closeScriptEditor() { $('scriptEditor').hidden = true; }
+
+  function saveScriptFromEditor() {
+    var pairs = textToPairs($('sePairs').value);
+    if (!pairs.length) { NF.toast('至少写一组完整的「Q: 问题 / A: 回答」'); return; }
+    var name = $('seName').value.trim() || '未命名剧本';
+    var id = api.scripts.save({
+      id: editingScriptId,
+      name: name,
+      topic: $('seTopic').value.trim(),
+      triggers: NF.camouflage.parseTriggers($('seTriggers').value),
+      thinkOpen: $('seThink').getAttribute('aria-checked') === 'true',
+      pairs: pairs
+    });
+    NF.store.patch({ mask: { script: id } });
+    refreshScriptUI();
+    closeScriptEditor();
+    NF.toast('已保存剧本「' + name + '」共 ' + pairs.length + ' 组');
   }
 
   /* ============================================================
@@ -1120,8 +1682,8 @@
     buildChapterList();
     syncBookMeta();
     buildSkinGrid();
-    buildScriptSelect();
-    buildTplList();
+    refreshScriptUI();
+    syncModelUI();
     buildHelp();
     bindConsole();
     bindGlobal();

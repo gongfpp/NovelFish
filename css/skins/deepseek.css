@@ -560,6 +560,28 @@
 .ds-think-body .rt-pre { background: var(--ds-code-block); border-color: var(--ds-border-1); }
 .ds-think-body .rt-code { background: var(--ds-code-inline); }
 
+/* 真实模型模式：思考体里放模型吐出来的推理原文，保留换行、跟着阅读栏宽 */
+.ds-think-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: var(--nf-width, 840px);
+}
+
+/* 思考进行中：表头文字走一道微光，和官网「思考中…」的观感一致 */
+.ds-think.is-streaming .ds-think-label {
+  background: linear-gradient(90deg,
+    var(--ds-label-3) 35%, var(--ds-label-1) 50%, var(--ds-label-3) 65%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ds-think-shimmer 1.6s linear infinite;
+}
+@keyframes ds-think-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
+}
+
 /* ---- 回答正文：官网 markdown 规格 16px/28px ---- */
 .ds-markdown { color: var(--ds-label-1); font-size: 16px; line-height: 28px; }
 .ds-markdown > *:first-child { margin-top: 0; }

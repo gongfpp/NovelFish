@@ -7,7 +7,15 @@
      · scriptId  这个会话内容取自哪个伪装剧本，保证同一会话里的问答话题一致
      · autoSeed  是否允许自动填充初始问答。手动「新对话」创建的会话为 false，
                  否则新对话一进去就自动长出一堆消息，不像真的
-     · exchanges 该会话的伪装问答；小说正文不在这里，始终由阅读引擎提供
+     · exchanges 该会话的问答；小说正文不在这里，始终由阅读引擎提供
+
+   一条问答（exchange）：
+     { q, a, mode, scriptId, reasoning, thinkOpen, elapsed, vote }
+     · mode      'novel' 深度思考里是小说 / 'model' 深度思考里是模型的真实推理
+     · reasoning 仅 mode='model' 有：模型吐出来的思考原文（模型不给就是空串）
+     · thinkOpen 这一条渲染时「深度思考」是否默认展开
+     · elapsed   表头上「已深度思考（用时 N 秒）」里的 N
+     · pending   正在流式生成中。写盘时留着它，刷新页面会被清成「已中断」
 
    小说阅读进度是全局的：切换会话只换掉伪装问答，阅读位置不受影响。
    ============================================================ */
@@ -16,6 +24,14 @@
 
   var GROUP_ORDER = ['今天', '昨天', '7 天内', '30 天内', '更早'];
   var SEQ_BASE = 1000;      // 默认会话的序号起点，新建会话在此基础上继续加
+
+  /* 单条消息的落盘上限。模型偶尔会吐出很长一段思考，
+     不拦的话几次对话就能把 localStorage 撑爆，连带把阅读进度一起挤掉。 */
+  var MAX_FIELD = 60000;
+
+  /* 老消息升级只跑一次：ensure() 在热路径上被反复调用，
+     每次都过一遍全部会话太亏。 */
+  var upgraded = false;
 
   function groupOf(age) {
     if (age <= 0) return '今天';
@@ -28,6 +44,29 @@
   function truncate(s, n) {
     s = String(s || '').replace(/\s+/g, ' ').trim();
     return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  function clip(s) {
+    var v = String(s == null ? '' : s);
+    return v.length > MAX_FIELD ? v.slice(0, MAX_FIELD) : v;
+  }
+
+  /** 一条问答的最小合法形状；老存档里只有 q / a 两个字段，一并补齐 */
+  function normalizeItem(it) {
+    var out = {
+      q: String((it && it.q) || ''),
+      a: String((it && it.a) == null ? '' : it.a),
+      mode: (it && it.mode) === 'model' ? 'model' : 'novel'
+    };
+    if (it && it.reasoning) out.reasoning = clip(it.reasoning);
+    if (it && it.scriptId) out.scriptId = String(it.scriptId);
+    /* 存的是显式值，两个方向都要留：true 表示「这条就是默认展开」，
+       不能被后来的全局开关改掉（真实模型对话永远默认展开）。 */
+    if (it && typeof it.thinkOpen === 'boolean') out.thinkOpen = it.thinkOpen;
+    if (it && it.elapsed) out.elapsed = Number(it.elapsed) || 0;
+    if (it && it.vote) out.vote = it.vote;
+    if (it && it.pending) out.pending = true;
+    return out;
   }
 
   function chat() { return NF.store.state.chat; }
@@ -78,7 +117,8 @@
     var out = [];
     for (var k = 0; k < want; k++) {
       var p = script.pairs[(start + k) % script.pairs.length];
-      if (p) out.push({ q: p.q, a: p.a });
+      // 历史会话都是伪装问答，「深度思考」里放的是小说
+      if (p) out.push(normalizeItem({ q: p.q, a: p.a, mode: 'novel', scriptId: script.id }));
     }
     conv.exchanges = out;
     return out;
@@ -109,11 +149,38 @@
       if (typeof conv.autoSeed !== 'boolean') conv.autoSeed = conv.id.indexOf('n') !== 0;
     });
 
+    if (!upgraded) { upgraded = true; upgradeItems(c); }
+
     if (typeof c.seqCounter !== 'number') {
       c.seqCounter = c.convs.reduce(function (m, x) { return Math.max(m, x.seq || 0); }, SEQ_BASE);
     }
     if (!c.activeId || !find(c.activeId)) c.activeId = c.convs[0].id;
     return c;
+  }
+
+  /**
+   * 每个会话一次的老消息升级：补齐 mode 等字段。
+   * 顺带把上次流式写到一半就被关掉的那条落成「已中断」——
+   * 不然它会被永久标成 pending，界面上一直转圈。
+   */
+  function upgradeItems(c) {
+    var touched = false;
+    c.convs.forEach(function (conv) {
+      if (!Array.isArray(conv.exchanges)) { conv.exchanges = []; return; }
+      for (var i = 0; i < conv.exchanges.length; i++) {
+        var raw = conv.exchanges[i];
+        var clean = normalizeItem(raw);
+        if (!raw || typeof raw.mode !== 'string' || raw.q !== clean.q || raw.a !== clean.a) touched = true;
+        conv.exchanges[i] = clean;
+      }
+      var last = conv.exchanges[conv.exchanges.length - 1];
+      if (last && last.pending) {
+        delete last.pending;
+        if (!last.a) last.a = '（上一次生成被中断）';
+        touched = true;
+      }
+    });
+    if (touched) NF.store.save();
   }
 
   /* ---------------- 查询 ---------------- */
@@ -198,14 +265,86 @@
   function append(item) {
     ensure();
     var conv = active();
-    if (!conv.exchanges) conv.exchanges = [];
-    conv.exchanges.push({ q: item.q, a: item.a });
+    var list = seed(conv);
+    list.push(normalizeItem(item));
     if (conv.title === '新的对话') conv.title = truncate(item.q, 30);
     conv.age = 0;                              // 有新消息就回到「今天」
     conv.seq = ++chat().seqCounter;             // 并排到今天的最前面
     NF.store.save();
     NF.bus.emit('conv', conv);
     return conv;
+  }
+
+  /**
+   * 开一轮新对话：先把空壳落盘，再让调用方去流式填充。
+   * 先落盘是为了「刷新页面不丢提问」——回答没了可以重新生成，问题没了就找不回来了。
+   * @returns {number} 这一组问答在当前会话里的下标
+   */
+  function begin(item) {
+    ensure();
+    var conv = active();
+    var list = seed(conv);
+    var rec = normalizeItem(item);
+    rec.a = '';
+    rec.reasoning = '';
+    rec.pending = true;
+    list.push(rec);
+    if (conv.title === '新的对话') conv.title = truncate(rec.q, 30);
+    conv.age = 0;
+    conv.seq = ++chat().seqCounter;
+    NF.store.save();
+    NF.bus.emit('conv', conv);
+    return list.length - 1;
+  }
+
+  /** 流式结束（或出错）时把结果写回那一组问答并落盘 */
+  function finish(index, patch, convId) {
+    ensure();
+    var list = listOf(convId);
+    var it = list[index];
+    if (!it) return null;
+    it = list[index] = normalizeItem(it);
+    if (patch) {
+      if (patch.a != null) it.a = clip(patch.a);
+      if (patch.reasoning != null) it.reasoning = clip(patch.reasoning);
+      if (patch.mode) it.mode = patch.mode === 'model' ? 'model' : 'novel';
+      if (patch.scriptId) it.scriptId = String(patch.scriptId);
+      if (typeof patch.thinkOpen === 'boolean') it.thinkOpen = patch.thinkOpen;
+      if (patch.elapsed != null) it.elapsed = Number(patch.elapsed) || 0;
+      delete it.pending;
+      if (patch.pending) it.pending = true;
+    }
+    NF.store.save();
+    return it;
+  }
+
+  /** 取当前会话里的第 index 组（原始对象，不是副本） */
+  function at(index, convId) {
+    ensure();
+    return listOf(convId)[index] || null;
+  }
+
+  /** 清掉某一组的内容，重新生成前用 */
+  function clear(index, convId) {
+    ensure();
+    var list = listOf(convId);
+    var it = list[index];
+    if (!it) return null;
+    list[index] = normalizeItem({ q: it.q, mode: it.mode, scriptId: it.scriptId, thinkOpen: it.thinkOpen });
+    list[index].pending = true;
+    NF.store.save();
+    return list[index];
+  }
+
+  /**
+   * 某一组问答所在的数组。
+   * 流式响应可能在用户切走会话之后才到 —— 那时候 active() 已经换人了，
+   * 照着它收尾就会把上一本书的回答写进新会话。所以发起时要记住会话 id。
+   */
+  function listOf(convId) {
+    if (!convId) return active().exchanges;
+    var conv = find(convId);
+    return conv ? seed(conv) : [];
   }
 
   function remove(id) {
@@ -234,6 +373,7 @@
   /**
    * 「重新生成」：给第 index 组问答换一条同剧本的其它回答。
    * 只换内容，不动阅读进度（正文由阅读引擎独立提供）。
+   * 真实模型对话由上层重新问一遍模型，这里返回 null 交给它。
    */
   function rollAnswer(index) {
     ensure();
@@ -241,6 +381,7 @@
     var list = seed(conv);
     var item = list[index];
     if (!item) return null;
+    if (item.mode === 'model') return null;
 
     var script = null;
     NF.camouflage.raw.forEach(function (s) { if (s.id === conv.scriptId) script = s; });
@@ -272,7 +413,7 @@
     ensure: ensure,
     groups: groups,
     active: active,
-    /** 当前会话的伪装问答数组（皮肤直接渲染它） */
+    /** 当前会话的问答数组（皮肤直接渲染它） */
     get exchanges() {
       var conv = active();
       return conv ? seed(conv) : [];
@@ -280,6 +421,13 @@
     select: select,
     create: create,
     append: append,
+    /** 流式对话用：先落一条空壳，结束时再 finish */
+    begin: begin,
+    finish: finish,
+    at: at,
+    clear: clear,
+    /** 当前会话 id：流式发起时记下来，收尾时传回 finish / clear */
+    activeId: function () { ensure(); return chat().activeId; },
     remove: remove,
     reset: reset,
     rollAnswer: rollAnswer,

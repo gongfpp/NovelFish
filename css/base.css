@@ -474,6 +474,61 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .skin-card.is-active .skin-radio { border-color: var(--c-accent); box-shadow: inset 0 0 0 4px var(--c-accent); }
 
+/* ---------------- 模型服务列表（模型面板） ---------------- */
+.svc-list { display: grid; gap: 8px; }
+.svc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-m);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.svc-item:hover { border-color: #c9ced6; background: #fcfcfd; }
+.svc-item.is-active { border-color: var(--c-accent); background: var(--c-accent-weak); }
+.svc-item.is-editing { box-shadow: inset 0 0 0 1px var(--c-accent); }
+.svc-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: #ccd2da;
+}
+.svc-item.is-active .svc-dot { background: #2da769; }
+.svc-info { flex: 1; min-width: 0; }
+.svc-name { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.svc-desc {
+  font-size: 11.5px; color: var(--c-text-3); margin-top: 2px; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.svc-empty {
+  border: 1px dashed var(--c-line);
+  border-radius: var(--radius-m);
+  padding: 14px 12px;
+  font-size: 12.5px;
+  color: var(--c-text-3);
+  line-height: 1.6;
+}
+
+/* 剧本编辑器里的问答正文框 */
+.se-pairs {
+  margin-top: 10px;
+  min-height: 150px;
+  resize: vertical;
+  line-height: 1.65;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* 控制台里的主按钮，和 .btn-ghost 成对出现 */
+.btn-primary { background: var(--c-accent); color: #fff; }
+.btn-primary:hover { background: #3f5ce6; }
+.btn:disabled, .btn-primary:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
 /* 快捷键表 */
 .keys { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .keys td { padding: 7px 0; border-bottom: 1px solid #f1f3f6; vertical-align: top; color: var(--c-text-2); }
