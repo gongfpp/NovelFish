@@ -1032,11 +1032,12 @@
       [k(mod) + ' + ' + k(','), '打开控制台（伪装成设置面板）'],
       [k(mod) + ' + ' + k('F'), '页内查找'],
       [k(mod) + ' + ' + k('+') + ' / ' + k('-') + ' / ' + k('0'), '浏览器缩放'],
+      [mac ? k('&#8963;') + ' + ' + k('&#8984;') + ' + ' + k('F') : k('F11'),
+        '真全屏：藏掉标签栏与工具栏，只留页面（主菜单「...」里也有这一项）'],
       [k(mod) + ' + ' + k('T'), '新标签页'],
-      ['发消息', '含「阅读触发词」→ 走伪装剧本，深度思考里是小说；不含则发给「模型」里配的服务'],
-      ['分享链接', '顶栏「分享」出的链接自带这本书；把它粘回窗口即载入'],
       [k('T'), '隐藏 / 显示浏览器外框'],
-      [k('F'), '真全屏（Windows 外框的「最大化」按钮同效）']
+      ['发消息', '含「阅读触发词」→ 走伪装剧本，深度思考里是小说；不含则发给「模型」里配的服务'],
+      ['分享链接', '顶栏「分享」出的链接自带这本书；把它粘回窗口即载入']
     ];
     $('helpKeys').innerHTML = rows.map(function (r) {
       return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>';
@@ -1451,6 +1452,13 @@
         return;
       }
 
+      // 真全屏：F11（Windows / Linux）与 ⌃⌘F（macOS），和真浏览器同键位
+      if (e.key === 'F11' || (e.metaKey && e.ctrlKey && (e.key === 'f' || e.key === 'F'))) {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
       // 老板键：Ctrl / ⌘ + D，只收不放
       if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault();          // 顺手吃掉浏览器自己的「加书签」
@@ -1628,15 +1636,25 @@
     NF.bus.on('mask', syncMaskUI);
   }
 
+  /**
+   * 真全屏：标签栏与工具栏一并藏掉，只留页面。
+   * 进入时先把 is-fs 挂上（点击立刻有反馈），被系统拒绝再回滚 ——
+   * 否则在「不许全屏」的环境里工具栏会消失且再也点不回来。
+   */
   function toggleFullscreen() {
+    var app = $('app');
     if (document.fullscreenElement) {
-      document.exitFullscreen();
-      $('app').classList.remove('is-fs');
-    } else {
-      var el = document.documentElement;
-      if (el.requestFullscreen) el.requestFullscreen().catch(function () { /* 用户拒绝 */ });
-      $('app').classList.add('is-fs');
+      if (document.exitFullscreen) document.exitFullscreen();
+      app.classList.remove('is-fs');
+      return;
     }
+    var el = document.documentElement;
+    if (!el.requestFullscreen) return;
+    app.classList.add('is-fs');
+    el.requestFullscreen().catch(function () {
+      app.classList.remove('is-fs');
+      NF.toast('这个环境不让进全屏，可以改用「隐藏浏览器外框」');
+    });
   }
 
   document.addEventListener('fullscreenchange', function () {
