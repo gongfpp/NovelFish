@@ -42,6 +42,8 @@
     sparkle: 'M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5zm7 12l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9.9-2.4z',
     /* Edge 阅读视图（书本） */
     reading: 'M21 4.5H6.5A2.5 2.5 0 0 0 4 7v12.5h2V7a.5.5 0 0 1 .5-.5H21v-2zm-1.5 3H8a1 1 0 0 0-1 1v10.6c1.3-.8 3-.9 4.4-.2H20V7.5zm-2 3v1.6h-6V10.5h6zm0 3v1.6h-4v-1.6h4z',
+    /* 全屏（Material Symbols fullscreen，四角标记） */
+    fullscreen: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
     extensionOff: 'M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5A2.5 2.5 0 0 0 10.5 1 2.5 2.5 0 0 0 8 3.5V5H4.5l15 15h.5c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5zM3.4 2L2 3.4l2.8 2.8c-.5.3-.8.9-.8 1.6v3.8h1.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H4V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7.7 0 1.3.3 1.8.7l5.3 5.3 1.4-1.4L3.4 2z'
   };
 
@@ -74,6 +76,7 @@
       cast: icon('M1 18v3h3a3 3 0 0 0-3-3zm0-4v2a5 5 0 0 1 5 5h2a7 7 0 0 0-7-7zm0-4v2a9 9 0 0 1 9 9h2A11 11 0 0 0 1 10zm20-7H3a2 2 0 0 0-2 2v3h2V5h18v14h-7v2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z', 18),
       find: icon('M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z', 18),
       zoom: icon('M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM9.5 14A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14zM12 7v2H8.5v1H11v2H8.5v1H12v2H7V7h5z', 18),
+      full: icon(P.fullscreen, 18),
       tools: icon('M22.7 19l-9.1-9.1a5.5 5.5 0 0 0-7.1-7.1l3.1 3.1-2.8 2.8L3.7 5.6a5.5 5.5 0 0 0 7.1 7.1l9.1 9.1 2.8-2.8z', 18),
       extensions: icon(P.puzzle, 18),
       clear: icon('M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z', 18),
@@ -119,7 +122,10 @@
     rows: chrome.rows
   };
 
-  /* ---------------- 主菜单（⋮ / ⋯） ---------------- */
+  /* ---------------- 主菜单（⋮ / ⋯） ----------------
+     key: 'fullscreen' 是特殊项，fmtKey 会按系统给出 ⌃⌘F / F11。
+     真实 Chrome 把全屏放在系统菜单或 F11 里，这里为了拿得到入口，
+     在「缩放」下面提了一级（Edge 的缩放浮层里本来就有这一项）。 */
   var chromeMenu = [
     { icon: 'tab', label: '新建标签页', key: 'mod+T' },
     { icon: 'window', label: '新建窗口', key: 'mod+N' },
@@ -131,6 +137,7 @@
     'sep',
     { icon: 'person', label: '密码和自动填充', sub: true },
     { icon: 'zoom', label: '缩放', sub: true },
+    { icon: 'full', label: '全屏', key: 'fullscreen' },
     { icon: 'cast', label: '投放…' },
     { icon: 'find', label: '查找…', key: 'mod+F' },
     'sep',
@@ -149,6 +156,7 @@
     { icon: 'incognito', label: '新建 InPrivate 窗口', key: 'mod+shift+N' },
     'sep',
     { icon: 'zoom', label: '缩放', sub: true },
+    { icon: 'full', label: '全屏', key: 'fullscreen' },
     { icon: 'favorites', label: '收藏夹', sub: true, key: 'mod+shift+O' },
     { icon: 'collections', label: '集锦', sub: true, key: 'mod+shift+Y' },
     { icon: 'history', label: '历史记录', sub: true, key: 'mod+H' },

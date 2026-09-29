@@ -45,6 +45,8 @@
   /** 快捷键文案：macOS 用 ⌘⇧，Windows 用 Ctrl+Shift */
   function fmtKey(spec) {
     var mac = isMac();
+    /* 全屏是唯一一项两个平台键位完全不同的：macOS 是 ⌃⌘F，Windows / Linux 是 F11 */
+    if (spec === 'fullscreen') return mac ? '\u2303\u2318F' : 'F11';
     return spec.split('+').map(function (k) {
       if (k === 'mod') return mac ? '\u2318' : 'Ctrl';
       if (k === 'shift') return mac ? '\u21E7' : 'Shift';
@@ -318,7 +320,7 @@
           'stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>' +
       '</div>' +
       '<div class="pop-zoom-full" data-zoom="full">' +
-        '<span>全屏</span><span class="pop-key">' + fmtKey('mod+shift+F') + '</span>' +
+        '<span>全屏</span><span class="pop-key">' + fmtKey('fullscreen') + '</span>' +
       '</div>';
   }
 
@@ -346,6 +348,11 @@
   /** 主菜单项 → 真实行为；没实现的就折叠收起（真实浏览器里是二级菜单） */
   function runMenuAction(label, row) {
     if (label === '缩放') { openZoomFlyout(row); return; }
+    if (label === '全屏') {
+      closePopovers();
+      if (NF.api && NF.api.toggleFullscreen) NF.api.toggleFullscreen();
+      return;
+    }
 
     closePopovers();
     if (/查找/.test(label)) { openFind(); return; }

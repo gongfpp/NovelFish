@@ -7,7 +7,7 @@
      地址栏与工具栏图标注入 / 站点信息、扩展程序、个人资料、主菜单四个面板 /
      侧边栏开关 / 对话列表切换与搜索 /
       「深度思考」表头冻结吸顶 / 消息操作条 / 分享弹窗 /
-     标签页标题与登录头像自定义 / 主菜单的查找、缩放、删除浏览数据 /
+     标签页标题与登录头像自定义 / 主菜单的查找、缩放、全屏、删除浏览数据 /
      模板库 / file:// 可用性 / EPUB 导入（nav 分章、NCX 分章、坏文件兜底）/
      分享副本（链接自包含整本书、粘回窗口或地址栏接收、超长书落文件）/
      打字提问的触发词分流（命中走剧本、不命中走真实模型）/ 流式思考与逐字回答 /
@@ -645,6 +645,20 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('Windows 下隐藏交通灯', !(await page.locator('.chrome-lights').isVisible()));
   check('Windows 窗口控制有三个按钮', await page.locator('.win-ctl').count() === 3);
   await shot('07-win-chrome');
+
+  // Windows 下「全屏」的键位文案跟着变 F11
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  await page.locator('[data-pop="menu"]').click();
+  await page.waitForTimeout(220);
+  check('Windows 下「全屏」的键位是 F11',
+    (await page.locator('#popMenu [data-menuitem="全屏"] .pop-key').textContent()).trim() === 'F11',
+    (await page.locator('#popMenu [data-menuitem="全屏"] .pop-key').textContent()).trim());
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(220);
+  await openConsole('look');
+  await page.waitForTimeout(220);
+
   await page.locator('.seg-item[data-os="mac"]').click();
   await page.waitForTimeout(250);
   check('可切回 macOS 外框', await page.locator('#app').getAttribute('data-os') === 'mac');
@@ -744,7 +758,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   await page.waitForTimeout(200);
   check('主菜单可打开', await page.locator('#popMenu').isVisible());
   check('主菜单项数正确',
-    await page.locator('#popMenu .pop-item').count() === 16,
+    await page.locator('#popMenu .pop-item').count() === 17,
     String(await page.locator('#popMenu .pop-item').count()));
   const menuTxt = await page.locator('#popMenu').textContent();
   check('主菜单含 Chrome 独有条目',
@@ -902,6 +916,69 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('缩放被重置后视口不带内联 zoom',
     await page.locator('#skinRoot').evaluate(e => e.style.zoom === ''));
 
+  // 全屏：主菜单「...」里的一级项（真实 Chrome 把它放在系统菜单 / F11，这里给了入口）
+  await page.locator('[data-pop="menu"]').click();
+  await page.waitForTimeout(220);
+  const fsRow = page.locator('#popMenu [data-menuitem="全屏"]');
+  check('主菜单里有「全屏」', await fsRow.count() === 1);
+  check('「全屏」紧跟在「缩放」后面', await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('#popMenu [data-menuitem]'))
+      .map(e => e.dataset.menuitem);
+    return items.indexOf('全屏') === items.indexOf('缩放') + 1;
+  }), await page.evaluate(() => Array.from(document.querySelectorAll('#popMenu [data-menuitem]'))
+    .map(e => e.dataset.menuitem).join('/')));
+  check('「全屏」有图标', await fsRow.locator('.pop-ico svg').count() === 1);
+  check('macOS 下「全屏」的键位是 ⌃⌘F',
+    (await fsRow.locator('.pop-key').textContent()).trim() === '\u2303\u2318F',
+    (await fsRow.locator('.pop-key').textContent()).trim());
+
+  await fsRow.click();
+  await page.waitForTimeout(500);
+  check('点「全屏」后主菜单收起', await page.locator('#popMenu').isHidden());
+  check('真的进了全屏（fullscreenElement 有值）',
+    await page.evaluate(() => !!document.fullscreenElement));
+  check('全屏时工具栏被藏掉',
+    await page.evaluate(() => document.getElementById('toolbar').getBoundingClientRect().height === 0),
+    'h=' + await page.evaluate(() => document.getElementById('toolbar').getBoundingClientRect().height));
+  check('全屏时标签栏被藏掉',
+    await page.evaluate(() => document.getElementById('tabbar').getBoundingClientRect().height === 0));
+  await shot('15c-fullscreen');
+
+  await page.evaluate(async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (e) { /* 无头环境不给退就当已退 */ }
+  });
+  await page.waitForTimeout(450);
+  check('退出全屏后工具栏回来', await page.locator('#toolbar').isVisible());
+  check('退出全屏后 is-fs 被摘掉',
+    await page.evaluate(() => !document.getElementById('app').classList.contains('is-fs')));
+
+  // 浏览器同款键位
+  await page.keyboard.press('F11');
+  await page.waitForTimeout(450);
+  check('F11 也能进全屏', await page.evaluate(() => !!document.fullscreenElement));
+  await page.keyboard.press('F11');
+  await page.waitForTimeout(450);
+  check('F11 再按一次退出全屏', await page.evaluate(() => !document.fullscreenElement));
+
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Meta');
+  await page.keyboard.press('f');
+  await page.keyboard.up('Meta');
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(450);
+  check('⌃⌘F 也能进全屏', await page.evaluate(() => !!document.fullscreenElement));
+  await page.evaluate(async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (e) { /* 同上 */ }
+  });
+  await page.waitForTimeout(400);
+  await page.keyboard.down('Meta');
+  await page.keyboard.press('f');
+  await page.keyboard.up('Meta');
+  await page.waitForTimeout(350);
+  check('新键位没抢走 ⌘F 的页内查找', await page.locator('#findBar').isVisible());
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+
   // 删除浏览数据
   const chBeforeClear = await page.evaluate(() => NovelFish.api.currentChapter());
   await page.locator('[data-pop="menu"]').click();
@@ -942,6 +1019,8 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('Edge 主菜单用 Edge 文案',
     /新建 InPrivate 窗口/.test(edgeMenuTxt) && /集锦/.test(edgeMenuTxt),
     edgeMenuTxt.slice(0, 30));
+  check('Edge 主菜单里也有「全屏」',
+    await page.locator('#popMenu [data-menuitem="全屏"]').count() === 1);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
 
