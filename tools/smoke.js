@@ -27,7 +27,7 @@ const mockMod = require('./mock-llm');
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8931';
 const SHOT = process.env.SHOT || '/tmp/nf-shots';
-const FILE_URL = process.env.FILE_URL || 'file://' + require('path').resolve(__dirname, '..', 'index.html');
+const FILE_URL = process.env.FILE_URL || 'file://' + path.resolve(__dirname, '..', 'index.html');
 const MOCK_PORT = Number(process.env.MOCK_PORT || 8932);
 
 /* 上传头像用的 1x1 PNG，跑完就删 */
