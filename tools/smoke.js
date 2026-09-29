@@ -9,10 +9,13 @@
       「深度思考」表头冻结吸顶 / 消息操作条 / 分享弹窗 /
      标签页标题与登录头像自定义 / 主菜单的查找、缩放、删除浏览数据 /
      模板库 / file:// 可用性 / EPUB 导入（nav 分章、NCX 分章、坏文件兜底）/
-     分享副本（链接自包含整本书、粘回窗口或地址栏接收、超长书落文件）
+     分享副本（链接自包含整本书、粘回窗口或地址栏接收、超长书落文件）/
+     打字提问的触发词分流（命中走剧本、不命中走真实模型）/ 流式思考与逐字回答 /
+     自建伪装剧本与专属触发词 / 模型服务配置与错误分类
    运行：
      cd <项目根> && python3 -m http.server 8931 --bind 127.0.0.1 &
      NODE_PATH=<playwright 所在 node_modules> node tools/smoke.js
+   （脚本自己会在 8932 起一个假模型服务，不需要任何真实 API Key）
    截图输出到 $SHOT（默认 /tmp/nf-shots）
    退出码：0 全通过 / 1 有断言失败 / 2 崩溃
    ============================================================ */
@@ -20,10 +23,12 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const mockMod = require('./mock-llm');
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8931';
 const SHOT = process.env.SHOT || '/tmp/nf-shots';
 const FILE_URL = process.env.FILE_URL || 'file://' + require('path').resolve(__dirname, '..', 'index.html');
+const MOCK_PORT = Number(process.env.MOCK_PORT || 8932);
 
 /* 上传头像用的 1x1 PNG，跑完就删 */
 const AVATAR_PNG = path.join(os.tmpdir(), 'nf-avatar-' + process.pid + '.png');
@@ -90,6 +95,8 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
 
 (async () => {
   const errors = [];
+  /* 本地假模型服务：验证触发词分流与流式渲染都靠它，不需要真 Key */
+  const mock = await mockMod.start(MOCK_PORT);
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
@@ -110,8 +117,55 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   };
   const shot = n => page.screenshot({ path: SHOT + '/' + n + '.png' });
 
+  /**
+   * 等这一轮流式输出彻底走完。
+   * 剧本模式有 0.7s 的「思考」停顿 + 打字机，模型模式看服务端吐多快，
+   * 都用固定 sleep 容易写出脆断言，所以直接问应用「还在跑吗」。
+   */
+  async function settle(max = 12000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < max) {
+      if (!(await page.evaluate(() => !!(window.NovelFish && NovelFish.api.isStreaming())))) {
+        await page.waitForTimeout(120);
+        return;
+      }
+      await page.waitForTimeout(80);
+    }
+  }
+
+  /** 一条助手消息在页面上的当前样子 */
+  async function turnView(index) {
+    return page.evaluate((i) => {
+      const list = NovelFish.chat.exchanges;
+      const it = list[i == null ? list.length - 1 : i] || {};
+      const node = document.querySelector('.ds-ai-msg[data-idx="' + (i == null ? list.length - 1 : i) + '"]');
+      if (!node) return { missing: true, storeMode: it.mode };
+      const think = node.querySelector('.ds-think');
+      const body = node.querySelector('.ds-think-body');
+      return {
+        storeMode: it.mode,
+        storeAnswer: it.a || '',
+        storeReasoning: it.reasoning || '',
+        storeElapsed: it.elapsed || 0,
+        thinkOpen: think ? think.dataset.open : null,
+        thinkCount: node.querySelectorAll('.ds-think').length,
+        label: node.querySelector('.ds-think-label') ? node.querySelector('.ds-think-label').textContent : '',
+        thinkLen: body ? (body.textContent || '').length : -1,
+        streaming: think ? think.classList.contains('is-streaming') : false,
+        answerLen: (node.querySelector('.ds-answer').textContent || '').length,
+        hasNovel: node.querySelectorAll('.nf-sec').length > 0,
+        paras: node.querySelectorAll('.nf-p').length
+      };
+    }, index == null ? null : index);
+  }
+
   /** 走官网路径进设置面板：侧栏账户行 → 设置 */
   async function openConsole(pane) {
+    // 面板已经开着就先关掉：遮罩会吃掉后面所有的点击
+    if (await page.locator('#console').isVisible()) {
+      await page.locator('#consoleClose').click();
+      await page.waitForTimeout(220);
+    }
     if (await page.locator('.ds').getAttribute('data-side') === 'closed') {
       await page.locator('.ds-open-side').click();
       await page.waitForTimeout(350);
@@ -380,10 +434,12 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
 
   const ansBefore = (await aiBox.locator('.ds-answer').textContent()).trim();
   await aiBox.locator('.ds-act[data-act="regen"]').click();
-  await page.waitForTimeout(500);
+  await settle();
   const ansAfter = (await page.locator('.ds-ai-msg').last().locator('.ds-answer').textContent()).trim();
   check('「重新生成」换掉了回答正文', ansBefore !== ansAfter,
     ansBefore.slice(0, 18) + ' -> ' + ansAfter.slice(0, 18));
+  check('「重新生成」不会改动提问本身',
+    (await page.locator('.ds-bubble').last().textContent()).trim().length > 4);
   check('「重新生成」不影响阅读位置',
     (await page.locator('.ds-ai-msg').last().locator('.nf-p').count()) > 2);
 
@@ -468,9 +524,13 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   const msgBefore = await page.locator('.ds-ai-msg').count();
   await page.locator('.ds-input').fill('帮我把这个方案的落地步骤梳理一下');
   await page.locator('.ds-input').press('Enter');
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(400);
   const msgAfter = await page.locator('.ds-ai-msg').count();
   check('发送后追加新对话', msgAfter === msgBefore + 1, `${msgBefore}->${msgAfter}`);
+  check('刚发出时表头是「思考中…」',
+    (await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent()).trim() === '思考中…',
+    await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent());
+  await settle();
   check('最新思考框处于展开态',
     await page.locator('.ds-think').last().getAttribute('data-open') === '1');
   check('历史思考框全部收起',
@@ -479,6 +539,12 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
     (await page.locator('.ds-ai-msg').last().locator('.nf-p').count()) > 3);
   const typed = (await page.locator('.ds-bubble').last().textContent()) || '';
   check('输入框里打的字成为提问内容', typed.includes('落地步骤'), typed.slice(0, 20));
+  check('回答是逐字打上来的（走完就有完整正文）',
+    (await page.locator('.ds-ai-msg').last().locator('.ds-answer').textContent()).trim().length > 40);
+  check('表头落定成「已深度思考（用时 N 秒）」',
+    /^已深度思考（用时 \d+ 秒）$/.test(
+      (await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent()).trim()),
+    await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent());
 
   /* ---------- 10. 左侧对话列表 ---------- */
   check('侧边栏有分组会话列表', await page.locator('.ds-hist-item').count() >= 10);
@@ -499,8 +565,9 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
     titleBeforeConv + ' -> ' + (await page.locator('.ds-top-title').textContent()));
   check('切换会话后选中项跟着变',
     (await page.locator('.ds-hist-item.is-active').textContent()) === otherTitle);
-  check('切换会话不丢阅读章节',
-    await page.evaluate(() => NovelFish.api.currentChapter()) === chBeforeConv);
+  const chAfterConv = await page.evaluate(() => NovelFish.api.currentChapter());
+  check('切换会话不丢阅读章节', chAfterConv === chBeforeConv,
+    `${chBeforeConv} -> ${chAfterConv}`);
   check('切换会话后仍能读到正文',
     (await page.locator('.ds-ai-msg').last().locator('.nf-p').count()) > 2);
 
@@ -925,7 +992,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
 
   await page.locator('.ds-input').fill('帮我评审一段系统设计');
   await page.locator('.ds-input').press('Enter');
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(400);
   check('新对话发送后进入正文', await page.locator('.ds-stage.is-welcome').count() === 0);
   check('新对话只有一组问答', await page.locator('.ds-ai-msg').count() === 1);
   check('新对话标题改成提问内容',
@@ -935,6 +1002,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
     (await page.locator('.ds-hist-item').first().textContent()).includes('评审'));
   check('新对话里正文可读',
     (await page.locator('.ds-ai-msg').last().locator('.nf-p').count()) > 2);
+  await settle();
 
   /* ---------- 19. 皮肤热切换（插件可插拔） ---------- */
   const chBeforeSwitch = await page.evaluate(() => NovelFish.store.state.progress.chapter);
@@ -1255,6 +1323,345 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   fs.unlinkSync(dlPath);
   check('分享全程无页面错误', errors.length === 0, errors.join(' | '));
 
+  /* ---------- 24. 打字提问：触发词分流 / 真实模型对话 ---------- */
+  // 换回一本小书，这一段只关心对话本身
+  await page.locator('#fileInput').setInputFiles(SHARE_TXT);
+  await page.waitForTimeout(900);
+  await page.waitForTimeout(300);
+
+  check('默认不带任何模型服务',
+    await page.evaluate(() => NovelFish.api.model.list().length) === 0);
+
+  // 没配模型：不含触发词的提问也只能走剧本，否则应用开箱就哑了
+  await page.locator('.ds-input').fill('这段代码的边界条件写对了吗');
+  await page.locator('.ds-input').press('Enter');
+  await settle();
+  const noModel = await turnView();
+  check('没有模型服务时，不含触发词的提问也走剧本',
+    noModel.storeMode === 'novel' && noModel.hasNovel,
+    noModel.storeMode + ' / novel=' + noModel.hasNovel);
+  check('降级到剧本时思考里仍然是小说', noModel.paras > 2, String(noModel.paras));
+
+  /* ---- 在「模型」面板里配一条服务（顺便验面板本身可用） ---- */
+  await openConsole('model');
+  check('模型面板初始是空态', await page.locator('#svcList .svc-empty').count() === 1);
+  check('模型面板有服务商预设',
+    await page.locator('#svcPreset option').count() >= 6,
+    String(await page.locator('#svcPreset option').count()));
+
+  await page.locator('#btnSvcAdd').click();
+  await page.locator('#svcPreset').selectOption('deepseek');
+  const presetFill = await page.evaluate(() => ({
+    base: document.getElementById('svcBase').value,
+    model: document.getElementById('svcModel').value
+  }));
+  check('选预设会自动填好接口地址与模型名',
+    presetFill.base === 'https://api.deepseek.com/v1' && presetFill.model === 'deepseek-chat',
+    JSON.stringify(presetFill));
+  await shot('40-model-pane');
+
+  await page.locator('#svcName').fill('本地假模型');
+  await page.locator('#svcBase').fill('http://127.0.0.1:' + MOCK_PORT + '/v1');
+  await page.locator('#svcKey').fill('sk-mock-123');
+  await page.locator('#svcModel').fill('deepseek-reasoner');
+  await page.locator('#svcExtra').fill('{"reasoning_effort":"high"}');
+  await page.locator('#btnSvcSave').click();
+  await page.waitForTimeout(350);
+  check('保存后列表里出现这条服务', await page.locator('#svcList .svc-item').count() === 1);
+  check('新保存的服务被标成使用中',
+    await page.locator('#svcList .svc-item .skin-tag').count() === 1);
+  check('服务成为当前生效的一条',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).model) === 'deepseek-reasoner');
+
+  await page.locator('#btnSvcTest').click();
+  await page.waitForTimeout(1600);
+  check('「测试连接」给出成功回执',
+    /连接正常/.test(await page.locator('#toastWrap').textContent()),
+    (await page.locator('#toastWrap').textContent()).trim());
+  await page.locator('#consoleClose').click();
+  await page.waitForTimeout(250);
+
+  /* ---- 不含触发词 → 走真实模型，思考是模型的真实推理 ---- */
+  mock.reset();
+  await page.locator('.ds-input').fill('讲讲排序算法的稳定性');
+  await page.locator('.ds-input').press('Enter');
+  await page.waitForTimeout(330);
+  const stream1 = await turnView();
+  check('真实对话：表头先显示「思考中…」', stream1.label === '思考中…', stream1.label);
+  check('真实对话：思考进行中带流式态', stream1.streaming);
+  check('真实对话：思考框里是推理文本而不是小说',
+    stream1.thinkLen > 4 && stream1.thinkLen < mockMod.REASONING.length && !stream1.hasNovel,
+    'thinkLen=' + stream1.thinkLen + ' novel=' + stream1.hasNovel);
+
+  await page.waitForTimeout(320);
+  const stream2 = await turnView();
+  check('思考是逐字流出来的（后一帧更长）',
+    stream2.thinkLen > stream1.thinkLen, stream1.thinkLen + ' -> ' + stream2.thinkLen);
+
+  await settle();
+  const modelDone = await turnView();
+  check('这一条落成「模型模式」', modelDone.storeMode === 'model', modelDone.storeMode);
+  check('深度思考里是模型给的原文',
+    modelDone.storeReasoning === mockMod.REASONING && modelDone.thinkLen === mockMod.REASONING.length,
+    modelDone.storeReasoning.slice(0, 20) + '(' + modelDone.thinkLen + ')');
+  check('回答是模型给的原文',
+    modelDone.storeAnswer.startsWith(mockMod.ANSWER.slice(0, 24)),
+    modelDone.storeAnswer.slice(0, 24));
+  check('回答完整渲染到了气泡里',
+    modelDone.answerLen >= mockMod.ANSWER.length, modelDone.answerLen + '/' + mockMod.ANSWER.length);
+  check('表头落定成带真实用时的文案',
+    /^已深度思考（用时 \d+ 秒）$/.test(modelDone.label), modelDone.label);
+  check('模型模式下「深度思考」默认就是展开的', modelDone.thinkOpen === '1');
+  check('模型模式下思考框里没有小说', !modelDone.hasNovel);
+  await shot('41-model-stream');
+
+  check('这一轮确实打到了一次模型', mock.calls.length === 1, String(mock.calls.length));
+  const req1 = mock.calls[0].body;
+  check('请求带上了 Key 与模型名',
+    /Bearer sk-mock-123/.test(mock.calls[0].auth) && req1.model === 'deepseek-reasoner',
+    mock.calls[0].auth + ' / ' + req1.model);
+  check('请求开了流式', req1.stream === true);
+  check('服务里的额外参数合进了请求体', req1.reasoning_effort === 'high',
+    JSON.stringify(req1.reasoning_effort));
+  check('把之前的对话当成上下文一起发了过去',
+    (req1.messages || []).length >= 3, String((req1.messages || []).length));
+  check('上下文里最后一条就是这次提问',
+    req1.messages[req1.messages.length - 1].content === '讲讲排序算法的稳定性');
+
+  /* ---- 含触发词 → 走剧本，思考里是小说的原文，且不打模型 ---- */
+  mock.reset();
+  await page.locator('.ds-input').fill('继续');
+  await page.locator('.ds-input').press('Enter');
+  await page.waitForTimeout(380);
+  const trigMid = await turnView();
+  check('命中触发词：表头也是「思考中…」（外观上与真实对话无异）',
+    trigMid.label === '思考中…', trigMid.label);
+  check('命中触发词：思考框里立刻挂上小说', trigMid.hasNovel && trigMid.paras > 2,
+    String(trigMid.paras));
+
+  await settle();
+  const trigDone = await turnView();
+  check('命中触发词的这条落成剧本模式', trigDone.storeMode === 'novel', trigDone.storeMode);
+  check('剧本模式有「用时」，表头同样落定',
+    /^已深度思考（用时 \d+ 秒）$/.test(trigDone.label), trigDone.label);
+  check('回答取自剧本而不是模型',
+    !trigDone.storeAnswer.includes('收到') && trigDone.storeAnswer.length > 10,
+    trigDone.storeAnswer.slice(0, 18));
+  check('命中的提问一次都没有发给模型', mock.calls.length === 0, String(mock.calls.length));
+  check('触发词原样成为提问气泡',
+    (await page.locator('.ds-bubble').last().textContent()).trim() === '继续');
+
+  /* ---- 自建剧本：名称 / 话题 / 专属触发词 / 深度思考默认开合 ---- */
+  await openConsole('mask');
+  const scriptCountBefore = await page.locator('#selScript option').count();
+  await page.locator('#btnScriptNew').click();
+  await page.locator('#seName').fill('运维播报');
+  await page.locator('#seTopic').fill('值班');
+  await page.locator('#seTriggers').fill('看板, 巡检');
+  await page.locator('#seThink').click();          // 关掉「默认展开」
+  await page.locator('#sePairs').fill(
+    'Q: 今天看板正常吗\nA: 正常，没有告警。\n\nQ: 巡检跑完了吗\nA: 跑完了，结果已归档。');
+  await page.locator('#btnScriptSave').click();
+  await page.waitForTimeout(350);
+  check('自建剧本落盘了',
+    await page.evaluate(() => (NovelFish.store.state.mask.customScripts || []).length) === 1);
+  check('自建剧本出现在剧本下拉里',
+    await page.locator('#selScript option').count() === scriptCountBefore + 1);
+  check('保存后自动切到新剧本',
+    await page.evaluate(() => NovelFish.store.state.mask.script).then(
+      id => page.evaluate((x) => {
+        const list = NovelFish.camouflage.scripts;
+        return list[list.length - 1].id === x;
+      }, id)));
+  check('自建剧本的专属触发词已生效',
+    await page.evaluate(() => NovelFish.api.scripts.match('帮我看板')) === '看板');
+  check('全局阅读触发词仍然生效',
+    await page.evaluate(() => NovelFish.api.scripts.match('我们继续吧')) === '继续');
+  const trigInput = await page.locator('#inpTriggers').inputValue();
+  check('触发词输入框显示的是真实配置', /继续/.test(trigInput), trigInput);
+  await shot('42-script-editor');
+  await page.locator('#consoleClose').click();
+  await page.waitForTimeout(250);
+
+  mock.reset();
+  await page.locator('.ds-input').fill('帮我看板');
+  await page.locator('.ds-input').press('Enter');
+  await settle();
+  const custom = await turnView();
+  check('专属触发词命中自建剧本',
+    await page.evaluate(() => {
+      const list = NovelFish.chat.exchanges;
+      const id = list[list.length - 1].scriptId;
+      return NovelFish.camouflage.raw.some(s => s.id === id && s.custom);
+    }));
+  check('回答就是自建剧本里写的那句', custom.storeAnswer === '正常，没有告警。', custom.storeAnswer);
+  check('自建剧本可以让「深度思考」默认收起', custom.thinkOpen === '0', String(custom.thinkOpen));
+  check('收起时正文仍在 DOM 里（点开即读）', custom.hasNovel && custom.paras > 2);
+  check('配了模型也不会截走触发词提问', mock.calls.length === 0, String(mock.calls.length));
+
+  // 删掉自建剧本，别影响后面的用例
+  await openConsole('mask');
+  await page.locator('#btnScriptDel').click();
+  await page.waitForTimeout(300);
+  check('自建剧本可以删除',
+    await page.evaluate(() => (NovelFish.store.state.mask.customScripts || []).length) === 0);
+  check('删掉之后选中的剧本回落成「混合」',
+    await page.evaluate(() => NovelFish.store.state.mask.script) === 'auto',
+    await page.evaluate(() => NovelFish.store.state.mask.script));
+
+  /* ---- 内置剧本改不动，只能另存副本 ---- */
+  await page.locator('#selScript').selectOption({ index: 1 });
+  await page.waitForTimeout(200);
+  await page.locator('#btnScriptEdit').click();
+  await page.waitForTimeout(280);
+  check('内置剧本打开编辑器时明说是另存副本',
+    /另存为副本/.test(await page.locator('#seTitle').textContent()),
+    await page.locator('#seTitle').textContent());
+  check('编辑器带出了内置剧本原有的问答',
+    /^Q: /.test(await page.locator('#sePairs').inputValue()));
+  check('副本名自动加了「副本」后缀',
+    /副本$/.test(await page.locator('#seName').inputValue()),
+    await page.locator('#seName').inputValue());
+  await page.locator('#btnScriptSave').click();
+  await page.waitForTimeout(320);
+  const copyState = await page.evaluate(() => {
+    const list = NovelFish.camouflage.scripts;
+    const last = list[list.length - 1];
+    return {
+      customs: (NovelFish.store.state.mask.customScripts || []).length,
+      isCustom: !!last.custom,
+      selected: last.id === NovelFish.store.state.mask.script
+    };
+  });
+  check('另存后生成一条自建剧本并选中它',
+    copyState.customs === 1 && copyState.isCustom && copyState.selected,
+    JSON.stringify(copyState));
+  await shot('43-script-copy');
+
+  // 内置剧本本身还在
+  check('内置剧本没有被改动',
+    await page.evaluate(() => NovelFish.camouflage.raw.filter(s => !s.custom).length) >= 13);
+
+  await page.locator('#btnScriptDel').click();
+  await page.waitForTimeout(280);
+  check('副本可以删掉，内置剧本删不动',
+    await page.evaluate(() => (NovelFish.store.state.mask.customScripts || []).length) === 0);
+  await page.locator('#selScript').selectOption({ index: 1 });
+  await page.waitForTimeout(150);
+  await page.locator('#btnScriptDel').click();
+  await page.waitForTimeout(250);
+  check('点删除内置剧本时给出说明而不是静默失败',
+    /内置剧本删不掉/.test(await page.locator('#toastWrap').textContent()),
+    (await page.locator('#toastWrap').textContent()).trim());
+
+  /* ---- 模型服务的切换与删除 ---- */
+  await page.locator('.ctab[data-tab="model"]').click();
+  await page.waitForTimeout(200);
+  await page.evaluate(() => NovelFish.api.model.save({
+    name: '第二条', baseUrl: 'http://127.0.0.1:8999/v1', apiKey: 'k', model: 'm2'
+  }));
+  await page.waitForTimeout(250);
+  check('可以配置多条模型服务', await page.locator('#svcList .svc-item').count() === 2);
+  check('新加的服务不会抢走「使用中」',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).name) === '本地假模型');
+
+  await page.locator('#svcList .svc-item').nth(1).click();
+  await page.waitForTimeout(250);
+  check('点列表里的服务即切换当前服务',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).name) === '第二条',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).name));
+  const editingBase = await page.locator('#svcBase').inputValue();
+  check('编辑区跟着换成刚点的那条', /8999/.test(editingBase), editingBase);
+
+  await page.locator('#svcList .svc-item').first().click();
+  await page.waitForTimeout(250);
+  check('点回第一条就切回它',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).name) === '本地假模型',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).name));
+  check('编辑区也跟着换回第一条',
+    /8932/.test(await page.locator('#svcBase').inputValue()));
+
+  await page.locator('#svcList .svc-item').nth(1).click();
+  await page.waitForTimeout(200);
+  await page.locator('#btnSvcDel').click();
+  await page.waitForTimeout(280);
+  check('服务可以删除', await page.locator('#svcList .svc-item').count() === 1);
+  check('删掉当前服务后自动落到剩下那条',
+    await page.evaluate(() => (NovelFish.api.model.active() || {}).name) === '本地假模型');
+
+  /* ---- 关掉流式：一次性拿回整段，且模型没给推理时撤掉整块「深度思考」 ---- */
+  await page.locator('.ctab[data-tab="model"]').click();
+  await page.waitForTimeout(180);
+  await page.locator('#swStream').click();
+  await page.waitForTimeout(200);
+  check('流式开关已关闭', await page.evaluate(() => NovelFish.store.state.model.stream) === false);
+
+  mock.reset();
+  await page.locator('#consoleClose').click();
+  await page.waitForTimeout(250);
+  await page.locator('.ds-input').fill('非流式也问一次');
+  await page.locator('.ds-input').press('Enter');
+  await settle();
+  const plain = await turnView();
+  check('非流式请求 body.stream 是 false', mock.calls[0].body.stream === false);
+  check('非流式同样能拿到完整回答', plain.storeAnswer.length >= mockMod.ANSWER.length,
+    String(plain.storeAnswer.length));
+  check('模型没给推理时，整块「深度思考」撤掉（和真官网一致）',
+    plain.thinkCount === 0, String(plain.thinkCount));
+
+  await page.evaluate(() => NovelFish.api.model.setStream(true));
+
+  /* ---- 刷新后模型对话的思考与回答都还在 ---- */
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.ds', { timeout: 6000 });
+  await page.waitForTimeout(700);
+  const afterReload = await page.evaluate(() => {
+    const list = NovelFish.chat.exchanges;
+    const withReason = list.filter(x => x.mode === 'model' && (x.reasoning || '').length > 10);
+    const last = withReason[withReason.length - 1] || {};
+    return {
+      models: list.filter(x => x.mode === 'model').length,
+      reasoned: withReason.length,
+      reasoning: (last.reasoning || '').slice(0, 16),
+      answer: (last.a || '').slice(0, 16),
+      rendered: document.querySelectorAll('.ds-think-text').length
+    };
+  });
+  check('刷新后模型消息仍在', afterReload.models >= 1, String(afterReload.models));
+  check('刷新后思考原文仍然带着，并且渲染回了思考框',
+    afterReload.reasoned >= 1 && afterReload.rendered >= afterReload.reasoned,
+    JSON.stringify(afterReload));
+
+  /* ---- 错误分类：Key 错 / 模型名错 / 连不上，都要说人话 ---- */
+  const errBefore = errors.length;
+  const classify = await page.evaluate(async (base) => {
+    const mk = over => Object.assign({
+      id: '', name: 'x', baseUrl: base, apiKey: 'sk-ok', model: 'm', extra: ''
+    }, over);
+    const r = {};
+    r.auth = await NovelFish.api.model.probe(mk({ apiKey: 'bad-key' }));
+    r.model = await NovelFish.api.model.probe(mk({ model: 'no-such-model' }));
+    r.net = await NovelFish.api.model.probe(mk({ baseUrl: 'http://127.0.0.1:8999/v1' }));
+    r.json = await NovelFish.api.model.probe(mk({ extra: '{oops' }));
+    return {
+      auth: r.auth.message, model: r.model.message,
+      net: r.net.message, json: r.json.message,
+      authOk: r.auth.ok, modelOk: r.model.ok
+    };
+  }, 'http://127.0.0.1:' + MOCK_PORT + '/v1');
+  check('Key 无效 → 直接点明是 Key 的问题',
+    !classify.authOk && /API Key 无效/.test(classify.auth), classify.auth);
+  check('模型名不对 → 提示地址或模型名',
+    !classify.modelOk && /404/.test(classify.model), classify.model);
+  check('连不上 → 说明可能是跨域，并回显地址',
+    /连不上/.test(classify.net) && /跨域/.test(classify.net), classify.net.slice(0, 60));
+  check('额外参数不是合法 JSON → 当场报错而不是静默丢弃',
+    /额外参数/.test(classify.json), classify.json);
+  await page.waitForTimeout(500);
+  errors.splice(errBefore);      // 上面这几个失败请求是有意发的
+
+  check('分流与模型对话全程无页面错误', errors.length === 0, errors.join(' | '));
+
   /* ---------- 汇总 ---------- */
   console.log('\n== PASS (' + ok.length + ') ==');
   ok.forEach(l => console.log('  ✓ ' + l));
@@ -1266,6 +1673,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   console.log(errors.length ? errors.join('\n') : '  （无）');
 
   await browser.close();
+  await mock.close();
   try { fs.unlinkSync(AVATAR_PNG); } catch (e) { /* 已经删掉就算了 */ }
   try { fs.unlinkSync(FAKE_EPUB); } catch (e) { /* 已经删掉就算了 */ }
   [SHARE_TXT, OTHER_TXT, BIG_TXT].forEach(f => { try { fs.unlinkSync(f); } catch (e) { /* noop */ } });

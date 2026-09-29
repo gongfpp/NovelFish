@@ -139,23 +139,39 @@
   }
 
   function userNode(item, i) {
-    return '<div class="ds-msg ds-user-msg">' +
+    return '<div class="ds-msg ds-user-msg" data-idx="' + i + '">' +
       '<div class="ds-bubble">' + NF.util.escapeHtml(item.q) + '</div>' +
       actionsHtml('user', i) +
       '</div>';
   }
 
-  function aiNode(answerHtml, i, isLast, open, elapsed) {
-    return '<div class="ds-msg ds-ai-msg">' +
-      '<div class="ds-think" data-open="' + ((isLast && open) ? '1' : '0') + '">' +
+  /**
+   * 助手消息。
+   * 「深度思考」里放什么，取决于这条是哪种模式：
+   *   novel —— 容器留空，正文由阅读引擎挂进来（只挂在最新的一条上）
+   *   model —— 放模型真实吐出来的推理原文
+   * 表头文案也跟着走：流式当中是「思考中…」，落定后才是「已深度思考（用时 N 秒）」。
+   */
+  function aiNode(item, i, isLast, elapsedOf) {
+    var open = isLast && item.thinkOpen !== false;
+    var streamed = item.mode === 'model' ? String(item.reasoning || '') : '';
+    var body = streamed
+      ? '<div class="ds-think-text">' + NF.util.escapeHtml(streamed) + '</div>'
+      : '';
+    var label = item.elapsed
+      ? '已深度思考（用时 ' + item.elapsed + ' 秒）'
+      : '已深度思考（用时 ' + elapsedOf(i) + ' 秒）';
+
+    return '<div class="ds-msg ds-ai-msg" data-idx="' + i + '" data-mode="' + item.mode + '">' +
+      '<div class="ds-think" data-open="' + (open ? '1' : '0') + '" data-mode="' + item.mode + '">' +
         '<button class="ds-think-head" type="button">' +
           '<span class="ds-think-icon">' + ICON.spark + '</span>' +
-          '<span class="ds-think-label">已深度思考（用时 ' + elapsed + ' 秒）</span>' +
+          '<span class="ds-think-label">' + label + '</span>' +
           '<span class="ds-chev">' + ICON.chevron + '</span>' +
         '</button>' +
-        '<div class="ds-think-body"></div>' +
+        '<div class="ds-think-body">' + body + '</div>' +
       '</div>' +
-      '<div class="ds-markdown ds-answer">' + answerHtml + '</div>' +
+      '<div class="ds-markdown ds-answer">' + NF.util.richText(item.a || '') + '</div>' +
       actionsHtml('ai', i) +
       '</div>';
   }
@@ -296,6 +312,8 @@
       var currentThink = null;
       var headEl = null;          // 最后一条思考块的表头（改文案用）
       var shareOn = true;
+      /* 正在流式输出的那一条：{ idx, node, answer, thinkBody, head, stuck } */
+      var live = null;
 
       /* ============================================================
          外观联动：侧栏账户行的头像 / 名字跟着浏览器资料走
@@ -322,6 +340,11 @@
         return 8 + ((i * 7 + Math.round(api.progressPercent() * 0.6)) % 23);
       }
 
+      /** 第 i 条助手消息的节点 */
+      function msgNode(i) {
+        return innerEl.querySelector('.ds-ai-msg[data-idx="' + i + '"]');
+      }
+
       function renderThread() {
         var conv = api.activeConv;
         var list = api.chat.exchanges;
@@ -332,28 +355,38 @@
         feed = null;
         currentThink = null;
         headEl = null;
+        live = null;
 
         if (!list.length) {
           stageEl.classList.add('is-welcome');
+          api.mountThinking(null);
           return;
         }
         stageEl.classList.remove('is-welcome');
 
-        var open = !!api.mask.openThinking;
+        var lastIdx = list.length - 1;
+        var last = list[lastIdx];
         var html = '';
         list.forEach(function (item, i) {
           html += userNode(item, i);
-          html += aiNode(api.richText(item.a), i, i === list.length - 1, open, elapsedOf(i));
+          html += aiNode(item, i, i === lastIdx, elapsedOf);
         });
         innerEl.innerHTML = html;
 
-        var last = innerEl.querySelector('.ds-ai-msg:last-child');
-        currentThink = last.querySelector('.ds-think');
-        headEl = currentThink.querySelector('.ds-think-label');
+        var lastNode = msgNode(lastIdx);
+        currentThink = lastNode ? lastNode.querySelector('.ds-think') : null;
+        headEl = currentThink ? currentThink.querySelector('.ds-think-label') : null;
 
-        // 只有最新一条承载正文，历史思考块保持收起
-        feed = api.mountThinking(currentThink.querySelector('.ds-think-body'), threadEl,
-          { noRestore: !open });
+        /* 正文只挂在最新一条上，而且只有它是「剧本模式」时才挂：
+           最新一条走真实模型时，它的思考框被模型的推理占着，书这时候收起来；
+           再发一个触发词，新的剧本消息会把书连同阅读位置一起带回来。 */
+        var open = last.thinkOpen !== false;
+        if (last.mode !== 'model' && api.chapterCount() > 0) {
+          feed = api.mountThinking(currentThink.querySelector('.ds-think-body'), threadEl,
+            { noRestore: !open });
+        } else {
+          api.mountThinking(null);
+        }
 
         applyVotes();
         if (!open) threadEl.scrollTop = threadEl.scrollHeight;
@@ -428,16 +461,7 @@
           copyText(text, '复制');
           return;
         }
-        if (act === 'regen') {
-          if (api.rollAnswer(i)) {
-            var keep = threadEl.scrollTop;
-            renderThread();
-            threadEl.scrollTop = keep;
-            refreshHead();
-            api.toast('已重新生成');
-          }
-          return;
-        }
+        if (act === 'regen') { regenerate(i); return; }
         if (act === 'up' || act === 'down') {
           api.vote(i, act === 'up' ? 1 : -1);
           applyVotes();
@@ -457,7 +481,12 @@
          换台机器把它粘回应用就是同一本书。收起状态下就是官网那张空的分享链。
          ============================================================ */
       function novelVisible() {
-        return !!(currentThink && currentThink.dataset.open === '1') && api.chapterCount() > 0;
+        var list = api.chat.exchanges;
+        var last = list[list.length - 1];
+        // 书正摊在屏幕上：最新一条是剧本消息，而且它的思考框是展开的
+        return !!last && last.mode !== 'model' && !!feed &&
+               !!(currentThink && currentThink.dataset.open === '1') &&
+               api.chapterCount() > 0;
       }
 
       function openShare() {
@@ -496,18 +525,132 @@
       }
 
       /* ============================================================
-         发送
+         发送 / 流式渲染
+         ------------------------------------------------------------
+         核心那边决定这一轮走剧本还是走模型，这里只负责把回调里的增量画出来。
+         两种模式共用一条渲染路径：思考的增量写进思考体，正文的增量写进回答。
          ============================================================ */
+
+      function nearBottom() {
+        return threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 80;
+      }
+
+      /** 只在用户本来就贴着底的时候跟着滚，免得打断正在读正文的人 */
+      function stick() {
+        if (live && live.stuck) threadEl.scrollTop = threadEl.scrollHeight;
+      }
+
+      function onThreadScroll() {
+        if (!live) return;
+        live.stuck = nearBottom();
+      }
+
+      function grabLive(index) {
+        var node = msgNode(index);
+        live = node ? {
+          idx: index,
+          node: node,
+          answer: node.querySelector('.ds-answer'),
+          think: node.querySelector('.ds-think'),
+          thinkBody: node.querySelector('.ds-think-body'),
+          head: node.querySelector('.ds-think-label'),
+          stuck: false
+        } : null;
+        return live;
+      }
+
+      function onTurnStart(info) {
+        renderThread();                       // 先把新节点建出来
+        renderHistory();
+        if (!grabLive(info.index)) return;
+
+        /* 要不要跟着滚动：
+           模型模式是在跟模型对话，回答在下面长出来，跟到底；
+           剧本模式是在看书，「深度思考」里摊着正文，硬跟到底会把人从
+           正在读的位置拽走 —— 所以不动，用户自己往下滚一下就恢复跟随。 */
+        live.stuck = info.mode === 'model';
+        if (live.head) live.head.textContent = '思考中…';
+        if (live.think) live.think.classList.add('is-streaming');
+        if (info.mode === 'model') threadEl.scrollTop = threadEl.scrollHeight;
+      }
+
+      function onTurnThought(elapsed) {
+        if (live && live.head) live.head.textContent = '已深度思考（用时 ' + elapsed + ' 秒）';
+      }
+
+      function onTurnReasoning(delta, acc) {
+        if (!live || !live.thinkBody) return;
+        // 只摊开最新一条的思考，历史那些保持收起
+        if (live.think && live.think.dataset.open !== '1') live.think.dataset.open = '1';
+        live.thinkBody.textContent = acc;
+        stick();
+      }
+
+      function onTurnContent(delta, acc) {
+        if (!live || !live.answer) return;
+        live.answer.innerHTML = api.richText(acc);
+        stick();
+      }
+
+      function onTurnDone(info) {
+        if (info.error) api.toast('模型调用失败：' + info.error.message, 8000);
+
+        /* 模型没给推理（多数 chat 类模型都不给）就把整块「深度思考」撤掉。
+           真官网在没有思考内容时也不会凭空多出这一行。 */
+        if (info.mode === 'model' && !String(info.reasoning || '').trim() && live && live.node) {
+          var t = live.node.querySelector('.ds-think');
+          if (t) t.remove();
+        }
+        if (live) {
+          if (live.think) live.think.classList.remove('is-streaming');
+          if (live.head && info.elapsed) {
+            live.head.textContent = '已深度思考（用时 ' + info.elapsed + ' 秒）';
+          }
+          // 只有模型模式收尾才吸底；剧本模式收尾时用户多半还在读书里
+          if (info.mode === 'model') { live.stuck = true; stick(); }
+        }
+        refreshHead();
+        renderHistory();
+        live = null;
+      }
+
+      /**
+       * 发一条消息。text 留空时（直接点发送）核心会从剧本里挑一组，
+       * 连提问一起伪装掉 —— 和之前的行为一致。
+       */
       function send() {
         var text = inputEl.value.trim();
-        var item = text ? api.makeExchange({ q: text }) : api.makeExchange();
-        if (!item) return;
         inputEl.value = '';
         inputEl.style.height = 'auto';
         sendEl.dataset.ready = '0';
-        renderThread();
-        renderHistory();
-        if (feed) feed.ensureMore();
+
+        api.runTurn({
+          text: text,
+          onStart: onTurnStart,
+          onThought: onTurnThought,
+          onReasoning: onTurnReasoning,
+          onContent: onTurnContent,
+          onDone: onTurnDone
+        });
+      }
+
+      /** 「重新生成」：还是走同一条流式路径，看起来才像真的在重新算 */
+      function regenerate(i) {
+        var item = api.chat.exchanges[i];
+        if (!item) return;
+        if (item.mode === 'model' && !api.model.ready()) {
+          api.toast('还没有配置模型服务，去 设置 → 模型 里加一条');
+          return;
+        }
+        api.runTurn({
+          replaceIndex: i,
+          text: item.q,
+          onStart: onTurnStart,
+          onThought: onTurnThought,
+          onReasoning: onTurnReasoning,
+          onContent: onTurnContent,
+          onDone: onTurnDone
+        });
       }
 
       /* ============================================================
@@ -548,6 +691,7 @@
 
         /* ---- 侧栏 ---- */
         if (t.closest('.ds-newchat')) {
+          api.abortTurn();
           api.chat.create();
           renderThread();
           renderHistory();
@@ -574,6 +718,7 @@
         }
         var hist = t.closest('.ds-hist-item');
         if (hist) {
+          api.abortTurn();
           if (api.chat.select(hist.dataset.conv)) {
             renderThread();
             renderHistory();
@@ -665,6 +810,7 @@
       searchInput.addEventListener('input', onSearch);
       fileEl.addEventListener('change', onFileChange);
       document.addEventListener('keydown', onDocKeydown, true);
+      threadEl.addEventListener('scroll', onThreadScroll, { passive: true });
 
       /* ============================================================
          订阅
@@ -693,8 +839,15 @@
         }
       });
 
+      /* 表头文案的兜底维护：
+         流式期间归流式那边管（那里有真实用时），这里只在「已经落定但还没有
+         用时」的历史条目上补一个推出来的秒数。 */
       var offProgress = api.on('progress', function () {
-        if (headEl) headEl.textContent = '已深度思考（用时 ' + elapsedOf(api.chat.exchanges.length - 1) + ' 秒）';
+        if (!headEl || live) return;
+        var list = api.chat.exchanges;
+        var item = list[list.length - 1];
+        if (!item || item.mode === 'model' || item.elapsed) return;
+        headEl.textContent = '已深度思考（用时 ' + elapsedOf(list.length - 1) + ' 秒）';
       });
 
       var offMask = api.on('mask', function () {
@@ -723,12 +876,14 @@
 
       CLEANUP = [
         function () {
+          api.abortTurn();                       // 别再往已经拆掉的 DOM 里写字
           root.removeEventListener('click', onRootClick);
           inputEl.removeEventListener('keydown', onKeyDown);
           inputEl.removeEventListener('input', onInput);
           searchInput.removeEventListener('input', onSearch);
           fileEl.removeEventListener('change', onFileChange);
           document.removeEventListener('keydown', onDocKeydown, true);
+          threadEl.removeEventListener('scroll', onThreadScroll);
           offPanic(); offProgress(); offMask(); offConv(); offReload(); offSidebar();
           offProfile();
         }

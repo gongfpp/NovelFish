@@ -105,6 +105,7 @@
     <button class="ctab" data-tab="read">阅读</button>
     <button class="ctab" data-tab="skin">皮肤</button>
     <button class="ctab" data-tab="mask">伪装</button>
+    <button class="ctab" data-tab="model">模型</button>
     <button class="ctab" data-tab="look">外观</button>
     <button class="ctab" data-tab="help">帮助</button>
   </div>
@@ -182,9 +183,42 @@
     <!-- 伪装 -->
     <section class="cpane" data-pane="mask">
       <div class="field">
+        <label class="field-label">阅读触发词</label>
+        <input class="text-input" id="inpTriggers" placeholder="逗号分隔，例如：继续, 下一章, 接着读"
+               spellcheck="false" autocomplete="off">
+        <p class="tip">提问里出现其中任一个词，就走伪装剧本 —— 「深度思考」里摊开的是小说正文。
+          一个都不出现时，提问交给「模型」面板里配置的服务，深度思考里是模型的真实推理。</p>
+      </div>
+
+      <div class="field">
         <label class="field-label">伪装剧本 <span class="field-hint" id="tplCount">—</span></label>
         <select id="selScript" class="select"></select>
-        <p class="tip">问答正文是伪装内容，小说始终只出现在「深度思考」框里。</p>
+        <div class="row-btns">
+          <button class="btn btn-ghost" id="btnScriptNew">新建剧本</button>
+          <button class="btn btn-ghost" id="btnScriptEdit">编辑 / 另存副本</button>
+          <button class="btn btn-ghost" id="btnScriptDel">删除</button>
+        </div>
+        <p class="tip">内置剧本改不动，点「编辑」会带着内容打开编辑器，保存时存成一份自建副本。</p>
+      </div>
+
+      <div class="field" id="scriptEditor" hidden>
+        <label class="field-label" id="seTitle">剧本编辑</label>
+        <input class="text-input" id="seName" placeholder="剧本名称，例如「技术问答」" maxlength="30">
+        <input class="text-input" id="seTopic" placeholder="话题，例如「编程」（可留空）" maxlength="20">
+        <input class="text-input" id="seTriggers" placeholder="这个剧本专属的触发词，逗号分隔（可留空）"
+               spellcheck="false" autocomplete="off">
+        <div class="switch-row">
+          <span>命中时「深度思考」默认展开</span>
+          <button class="switch" id="seThink" role="switch" aria-checked="true"><i></i></button>
+        </div>
+        <textarea class="text-input se-pairs" id="sePairs" rows="9" spellcheck="false"
+          placeholder="Q: 帮我写一个二分查找&#10;A: 好的，下面是一段 Python 实现……&#10;&#10;Q: 再讲讲边界条件&#10;A: ……"></textarea>
+        <p class="tip">一组问答两行：<code>Q: 提问</code> 然后 <code>A: 回答</code>。回答可以换行写多行，
+          下一组从新的 <code>Q:</code> 重新开始。</p>
+        <div class="row-btns">
+          <button class="btn btn-primary" id="btnScriptSave">保存剧本</button>
+          <button class="btn btn-ghost" id="btnScriptCancel">取消</button>
+        </div>
       </div>
 
       <div class="field">
@@ -203,6 +237,53 @@
         <label class="field-label">对话模板</label>
         <p class="tip">点任意一条，把这一组问答插到当前对话里。</p>
         <div class="tpl-list" id="tplList"></div>
+      </div>
+    </section>
+
+    <!-- 模型 -->
+    <section class="cpane" data-pane="model">
+      <p class="pane-lead">
+        不含触发词的提问发给这里配置的模型，回答与「深度思考」都是模型真实产出的；
+        含触发词的提问走伪装剧本，深度思考里是小说。一条服务都没配时，所有提问都走剧本。
+      </p>
+
+      <div class="field">
+        <label class="field-label">模型服务 <span class="field-hint" id="svcCount">—</span></label>
+        <div class="svc-list" id="svcList"></div>
+        <div class="row-btns">
+          <button class="btn btn-ghost" id="btnSvcAdd">新增服务</button>
+        </div>
+      </div>
+
+      <div class="field" id="svcForm">
+        <label class="field-label">正在编辑 <span class="field-hint" id="svcEditing">—</span></label>
+        <select class="select" id="svcPreset"></select>
+        <input class="text-input" id="svcName" placeholder="名称（随便起）" maxlength="30">
+        <input class="text-input" id="svcBase" placeholder="接口地址，例如 https://api.deepseek.com/v1"
+               spellcheck="false" autocomplete="off">
+        <input class="text-input" id="svcKey" type="password" placeholder="API Key" spellcheck="false"
+               autocomplete="new-password">
+        <input class="text-input" id="svcModel" placeholder="模型名，例如 deepseek-chat"
+               spellcheck="false" autocomplete="off">
+        <input class="text-input" id="svcExtra" placeholder="额外请求参数（JSON，可留空）"
+               spellcheck="false" autocomplete="off">
+        <p class="tip">额外参数会合进请求体。要拿到推理内容的模型用它，例如
+          <code>{"enable_thinking": true}</code> 或 <code>{"reasoning_effort": "high"}</code>。</p>
+        <div class="row-btns">
+          <button class="btn btn-primary" id="btnSvcSave">保存</button>
+          <button class="btn btn-ghost" id="btnSvcTest">测试连接</button>
+          <button class="btn btn-ghost" id="btnSvcDel">删除</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">对话</label>
+        <div class="switch-row">
+          <span>流式输出（逐字上屏，和真模型一样）</span>
+          <button class="switch" id="swStream" role="switch" aria-checked="true"><i></i></button>
+        </div>
+        <p class="tip">Key 只写进这台机器的 localStorage，除你填的接口地址外不会发往任何地方。
+          浏览器直连被跨域拦下时，把接口地址换成你自己的中转地址即可。</p>
       </div>
     </section>
 
@@ -291,6 +372,7 @@
 <script src="js/core/novel.js"></script>
 <script src="js/core/epub.js"></script>
 <script src="js/core/share.js"></script>
+<script src="js/core/llm.js"></script>
 <script src="js/core/chat.js"></script>
 <script src="js/core/skins.js"></script>
 <script src="js/data/sample-novel.js"></script>
