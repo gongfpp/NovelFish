@@ -626,10 +626,40 @@
   pointer-events: none;
   transition: background-color .3s;
 }
+/* .c99b79f8 —— 表头正下方 24px 的向下渐隐（pD.dK），不是拿来看的装饰：
+   表头 sticky 浮起来压住正文时，用它把正文的硬切边糊掉。
+   官网默认 opacity:0，由 JS 的 onCoveringContent 控制；这里同样只在吸顶时显形。 */
+.ds-think-head::before {
+  content: "";
+  position: absolute;
+  top: calc(100% - 1px);
+  right: 0;
+  width: calc(100% + 10px);
+  height: 24px;
+  background: var(--ds-think-head-bg, var(--ds-bg));
+  -webkit-mask-image: linear-gradient(#000 0%, transparent 100%);
+  mask-image: linear-gradient(#000 0%, transparent 100%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  transform: translateZ(0);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s;
+}
+.ds-think.is-pinned .ds-think-head::before { opacity: 1; }
 /* ._5ab5d64：可点区铺满行高，hover 升到一级色 */
 .ds-think-head:hover { color: var(--ds-label-1); }
-/* ._245c867 ._4d41763：图标包裹 16px + margin-right 6px */
-.ds-think-icon { display: inline-flex; align-items: center; margin-right: 6px; flex: 0 0 auto; }
+/* ._245c867 ._970ac5e：图标恒为品牌蓝 —— 不跟表头一起变灰。
+   （官网只有「被中断」才换成 .dea47b2e 的三级色，本实现没有 stopped 分支） */
+.ds-think-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  flex: 0 0 auto;
+  color: var(--ds-brand);
+}
 .ds-think-label {
   flex-grow: 1;
   min-width: 0;
@@ -640,9 +670,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* .dea47b2e：chevron 恒为三级色，不随表头 hover 变深 */
-.ds-chev { flex: 0 0 auto; color: var(--ds-label-3); transition: transform .2s; }
-.ds-think[data-open="0"] .ds-think-head .ds-chev { transform: rotate(-90deg); }
+/* .dea47b2e：chevron 恒为三级色，不随表头 hover 变深。
+   方向由 JS 换图标决定（展开 oe.uj 朝下 / 收起 oe.A8 朝右），
+   这里不要再叠加旋转 —— 之前那条 rotate(-90deg) 会把「右」又转成「上」。 */
+.ds-chev { flex: 0 0 auto; color: var(--ds-label-3); }
 
 /* 思考正文：官网 .e1675d8b —— padding:5px 0 5px 22px */
 .ds-think-body {
@@ -655,6 +686,42 @@
 }
 .ds-think[data-open="0"] .ds-think-body { display: none; }
 
+/* 正文左侧的圆点与竖线 —— 官网 .e1675d8b 里插的那两个 div，不是 SVG：
+     .ddd26891._9b52f6c > .a510c7ce   5px 圆点，思考中 1.5s 呼吸，落定后转灰
+     ._9ecc93a                        left 7.5px 的 1px 竖线，自 31px 起、比容器矮 24px
+   圆点容器（._9b52f6c）是 16×16 的 inline-flex 居中盒，绝对定位 top:9px left:0，
+   所以圆点自身的左上角 = (0 + (16−5)/2, 9 + (16−5)/2) = (5.5px, 14.5px)。 */
+.ds-think-body::before {
+  content: "";
+  position: absolute;
+  top: 14.5px;
+  left: 5.5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ds-think-dot);     /* .a510c7ce._0652043 落定后的灰 */
+}
+/* .a510c7ce —— 思考中的品牌蓝 + @keyframes _4359e9e 的 1→1.3→1.3→1 呼吸 */
+.ds-think.is-streaming .ds-think-body::before {
+  background: var(--ds-brand);
+  animation: ds-think-pulse 1.5s linear infinite;
+}
+@keyframes ds-think-pulse {
+  0%   { animation-timing-function: ease-out; transform: scale(1); }
+  40%  { animation-timing-function: linear;   transform: scale(1.3); }
+  60%  { animation-timing-function: ease-out; transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+.ds-think-body::after {
+  content: "";
+  position: absolute;
+  left: 7.5px;                          /* 竖线中心 8px，正好落在圆点圆心下方 */
+  top: 31px;
+  height: calc(100% - 24px);
+  border-left: 1px solid var(--ds-think-rail);
+  pointer-events: none;
+}
+
 /* 思考框里的正文：字号 / 行距 / 栏宽交给阅读参数驱动，
    默认值（14px / 1.7 / 840px）正好等于官网 .ds-think-content 的 14px-24px 规格 */
 .ds-think-body .nf-sec {
@@ -664,8 +731,42 @@
   color: var(--ds-label-2);
 }
 .ds-think-body .nf-ch { font-weight: 600; border-left-color: var(--ds-brand-300); opacity: 1; }
-.ds-think-body .rt-pre { background: var(--ds-code-block); border-color: var(--ds-border-1); }
-.ds-think-body .rt-code { background: var(--ds-code-inline); }
+/* 代码块 —— 官网 .md-code-block + .md-code-block>pre：
+     底色 alias-markdown-code-block(#f9fafb)、圆角 12px、无边框
+     内容 13px/22px（--dsw-font-markdown-code-block），padding 16px，margin 16px 0
+     官网是 white-space:pre-wrap + word-break:break-all —— 长行折行，不横向滚
+   reader.css 默认那套（#f6f7f9 + 1px 边框 + 圆角 10px + 12.5px + 横向滚动）
+   是给别的皮肤兜底的，DS 下整块覆盖，否则代码块会比官网「重」一圈。 */
+.ds-markdown .rt-pre,
+.ds-think-body .rt-pre {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--ds-code-block);
+  border: 0;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 22px;
+  overflow: visible;
+}
+.ds-markdown .rt-pre code,
+.ds-think-body .rt-pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* 行内代码 —— .ds-markdown code：圆角 6px / padding 0 5px / .875em / bluish-100 */
+.ds-markdown .rt-code,
+.ds-think-body .rt-code {
+  background: var(--ds-code-inline);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: .875em;
+}
+/* 表格 —— 官网 .ds-markdown table：width:max-content，窄表不撑满整栏 */
+.ds-markdown .rt-table { width: max-content; max-width: 100%; }
 
 /* 真实模型模式：思考体里放模型吐出来的推理原文，保留换行、跟着阅读栏宽 */
 .ds-think-text {

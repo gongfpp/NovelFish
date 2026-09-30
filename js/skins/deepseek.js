@@ -483,19 +483,27 @@
       /* ============================================================
          思考块开合
          ============================================================ */
+      /**
+       * 开合一个思考块。
+       * chevron 必须跟着换：官网那边是 React 重渲染直接换图标（展开 oe.uj 朝下 /
+       * 收起 oe.A8 朝右）。这里只改 dataset 的话，图标会一直停在首次渲染的那一个，
+       * 于是「收起后箭头还朝下」。
+       */
       function setThink(think, open) {
         think.dataset.open = open ? '1' : '0';
+        var chev = think.querySelector('.ds-chev');
+        if (chev) chev.innerHTML = open ? ICON.chevDown : ICON.chevRight;
         if (think === currentThink && open && feed) feed.ensureMore();
       }
 
       function collapseAll() {
         Array.prototype.forEach.call(innerEl.querySelectorAll('.ds-think'), function (t) {
-          t.dataset.open = '0';
+          setThink(t, false);
         });
       }
 
       function openActive() {
-        if (currentThink) currentThink.dataset.open = '1';
+        if (currentThink) setThink(currentThink, true);
       }
 
       /* ============================================================
@@ -611,7 +619,24 @@
         if (live && live.stuck) threadEl.scrollTop = threadEl.scrollHeight;
       }
 
+      /**
+       * 表头的「吸顶渐隐」。
+       * 官网每个可折叠区的表头下面都挂了一个 24px 高的 .c99b79f8（默认 opacity:0），
+       * 由 onCoveringContent 在表头压住正文时点亮 —— 它存在的意义是把正文被硬切
+       * 的那条边糊掉。这里用同样的判定：表头贴到滚动口顶端了，就是压住了。
+       */
+      function syncPinnedHeads() {
+        var top = threadEl.getBoundingClientRect().top;
+        var list = threadEl.querySelectorAll('.ds-think');
+        for (var i = 0; i < list.length; i++) {
+          var head = list[i].querySelector('.ds-think-head');
+          list[i].classList.toggle('is-pinned',
+            !!head && head.getBoundingClientRect().top <= top + 0.5);
+        }
+      }
+
       function onThreadScroll() {
+        syncPinnedHeads();
         if (!live) return;
         live.stuck = nearBottom();
       }
@@ -959,6 +984,7 @@
       syncChips();
       renderHistory();
       renderThread();
+      syncPinnedHeads();          // 恢复的会话可能一进来表头就是吸顶的
       if (api.firstRun('novel-hint')) api.toast('小说在「深度思考」里 · Ctrl+D 一键收起');
 
       CLEANUP = [

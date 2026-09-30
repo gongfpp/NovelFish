@@ -390,6 +390,52 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
              cs.color === 'rgb(97, 102, 107)' &&
              cs.backgroundColor === 'rgba(0, 0, 0, 0)';
     }));
+  check('思考图标是品牌蓝（官网 ._245c867 ._970ac5e color:brand-primary）',
+    await page.locator('.ds-think-icon').last().evaluate(e =>
+      getComputedStyle(e).color === 'rgb(57, 100, 254)'),
+    await page.locator('.ds-think-icon').last().evaluate(e => getComputedStyle(e).color));
+  /* 官网正文左侧那两个是 div，不是 SVG：5px 圆点 + 1px 竖线。
+     圆点容器 16×16 居中盒绝对定位在 (0, 9)，所以圆点自身落在 (5.5, 14.5)。 */
+  check('正文左侧 5px 圆点 + 1px 竖线（官网 .a510c7ce / ._9ecc93a）',
+    await page.locator('.ds-think-body').last().evaluate(e => {
+      const dot = getComputedStyle(e, '::before');
+      const rail = getComputedStyle(e, '::after');
+      const h = e.getBoundingClientRect().height;
+      return dot.width === '5px' && dot.height === '5px' &&
+             dot.borderRadius === '50%' && dot.top === '14.5px' && dot.left === '5.5px' &&
+             rail.borderLeftWidth === '1px' && rail.left === '7.5px' && rail.top === '31px' &&
+             Math.abs(parseFloat(rail.height) - (h - 24)) < 1 &&
+             rail.borderLeftColor === 'rgb(225, 229, 238)';
+    }),
+    await page.locator('.ds-think-body').last().evaluate(e => {
+      const dot = getComputedStyle(e, '::before');
+      const rail = getComputedStyle(e, '::after');
+      const h = Math.round(e.getBoundingClientRect().height);
+      return dot.width + '@' + dot.top + '/' + dot.left + ' rail ' +
+             rail.borderLeftWidth + ' ' + rail.borderLeftColor + ' ' +
+             rail.height + ' (body ' + h + ' → 期望 ' + (h - 24) + ')';
+    }));
+  check('落定后的圆点转三级灰、动画停掉（官网 .a510c7ce._0652043）',
+    await page.locator('.ds-think-body').last().evaluate(e => {
+      const dot = getComputedStyle(e, '::before');
+      return dot.backgroundColor === 'rgb(129, 133, 140)' && dot.animationName === 'none';
+    }),
+    await page.locator('.ds-think-body').last().evaluate(e => {
+      const dot = getComputedStyle(e, '::before');
+      return dot.backgroundColor + ' anim=' + dot.animationName;
+    }));
+  check('表头下方有 24px 渐隐层，只在吸顶时才显形（官网 .c99b79f8）',
+    await page.locator('.ds-think').last().evaluate(t => {
+      const cs = getComputedStyle(t.querySelector('.ds-think-head'), '::before');
+      const pinned = t.classList.contains('is-pinned');
+      return cs.height === '24px' &&
+             /linear-gradient/.test(cs.maskImage || cs.webkitMaskImage || '') &&
+             cs.opacity === (pinned ? '1' : '0');
+    }),
+    await page.locator('.ds-think').last().evaluate(t => {
+      const cs = getComputedStyle(t.querySelector('.ds-think-head'), '::before');
+      return cs.height + ' op=' + cs.opacity + ' pinned=' + t.classList.contains('is-pinned');
+    }));
   check('思考块与回答之间 10px（官网 ._74c0879 + .ds-assistant-message-main-content）',
     await page.locator('.ds-ai-msg').last().locator('.ds-answer').evaluate(e =>
       getComputedStyle(e).marginTop === '10px'));
@@ -399,6 +445,17 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('点冻结条即收起该思考框',
     await page.locator('.ds-think').last().getAttribute('data-open') === '0');
   check('收起后正文不可见', !(await page.locator('.ds-think-body .nf-p').last().isVisible()));
+  check('收起时 chevron 朝右（官网 oe.A8），没有被 CSS 再转 90°',
+    await page.locator('.ds-think').last().evaluate(e => {
+      const chev = e.querySelector('.ds-chev');
+      const d = chev.querySelector('path').getAttribute('d');
+      return /^M5\.5 2\.1514/.test(d) && getComputedStyle(chev).transform === 'none';
+    }),
+    await page.locator('.ds-think').last().evaluate(e => {
+      const chev = e.querySelector('.ds-chev');
+      return chev.querySelector('path').getAttribute('d').slice(0, 20) +
+             ' tf=' + getComputedStyle(chev).transform;
+    }));
   await page.locator('.ds-think-head').last().click();
   await page.waitForTimeout(250);
   check('再点一次恢复展开',
@@ -578,6 +635,18 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('刚发出时表头是「正在思考」',
     (await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent()).trim() === '正在思考',
     await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent());
+  check('思考中的圆点是品牌蓝 + 1.5s 呼吸（官网 .a510c7ce + @keyframes _4359e9e）',
+    await page.locator('.ds-think').last().evaluate(t => {
+      if (!t.classList.contains('is-streaming')) return false;
+      const dot = getComputedStyle(t.querySelector('.ds-think-body'), '::before');
+      return dot.backgroundColor === 'rgb(57, 100, 254)' &&
+             /ds-think-pulse/.test(dot.animationName) && dot.animationDuration === '1.5s';
+    }),
+    await page.locator('.ds-think').last().evaluate(t => {
+      const dot = getComputedStyle(t.querySelector('.ds-think-body'), '::before');
+      return t.className + ' | ' + dot.backgroundColor + ' ' +
+             dot.animationName + ' ' + dot.animationDuration;
+    }));
   await settle();
   check('最新思考框处于展开态',
     await page.locator('.ds-think').last().getAttribute('data-open') === '1');
