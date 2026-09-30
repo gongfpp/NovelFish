@@ -223,8 +223,7 @@
    * 表头文案照官网 messageThinkDuration / messageThinking / messageThinkStopped：
    * 流式当中是「正在思考」，落定后是「已思考（用时 N 秒）」，被中断是「已停止」。
    */
-  function aiNode(item, i, isLast, elapsedOf) {
-    var open = isLast && item.thinkOpen !== false;
+  function thinkHtml(item, i, open, elapsedOf) {
     var streamed = item.mode === 'model' ? String(item.reasoning || '') : '';
     var body = streamed
       ? '<div class="ds-think-text">' + NF.util.escapeHtml(streamed) + '</div>'
@@ -233,15 +232,28 @@
       ? '已思考（用时 ' + item.elapsed + ' 秒）'
       : '已思考（用时 ' + elapsedOf(i) + ' 秒）';
 
+    return '<div class="ds-think" data-open="' + (open ? '1' : '0') + '" data-mode="' + item.mode + '">' +
+      '<button class="ds-think-head" type="button">' +
+        '<span class="ds-think-icon">' + ICON.think(16) + '</span>' +
+        '<span class="ds-think-label">' + label + '</span>' +
+        '<span class="ds-chev">' + (open ? ICON.chevDown : ICON.chevRight) + '</span>' +
+      '</button>' +
+      '<div class="ds-think-body">' + body + '</div>' +
+    '</div>';
+  }
+
+  function aiNode(item, i, isLast, elapsedOf) {
+    var open = isLast && item.thinkOpen !== false;
+    /* 模型模式且模型没吐推理 —— 这一块根本不渲染。
+       少写这一句的后果不是「多一行字」，是刷新/切会话之后凭空长出一个 10px 高的
+       空盒子：圆点还悬在原位、竖线高度算成负数不画，看着就是一个人造的点挂在
+       回答上面。真官网没有思考内容时也不会有这一行。
+       剧本模式恒有：那一块就是放正文的地方。
+       流式当中的那一轮由 onTurnStart 现场补（开跑时还不知道会不会有推理）。 */
+    var hasThink = item.mode !== 'model' || !!String(item.reasoning || '').trim();
+
     return '<div class="ds-msg ds-ai-msg" data-idx="' + i + '" data-mode="' + item.mode + '">' +
-      '<div class="ds-think" data-open="' + (open ? '1' : '0') + '" data-mode="' + item.mode + '">' +
-        '<button class="ds-think-head" type="button">' +
-          '<span class="ds-think-icon">' + ICON.think(16) + '</span>' +
-          '<span class="ds-think-label">' + label + '</span>' +
-          '<span class="ds-chev">' + (open ? ICON.chevDown : ICON.chevRight) + '</span>' +
-        '</button>' +
-        '<div class="ds-think-body">' + body + '</div>' +
-      '</div>' +
+      (hasThink ? thinkHtml(item, i, open, elapsedOf) : '') +
       '<div class="ds-markdown ds-answer">' + NF.util.richText(item.a || '') + '</div>' +
       actionsHtml('ai', i) +
       '</div>';
@@ -659,6 +671,14 @@
         renderThread();                       // 先把新节点建出来
         renderHistory();
         if (!grabLive(info.index)) return;
+
+        /* 模型模式下这一块取决于「模型到底有没有推理」，开跑时还不知道，
+           所以这里先补出来；真没吐的话 onTurnDone 再撤掉，之后重渲染也不会回来。 */
+        if (info.mode === 'model' && !live.think) {
+          live.node.insertAdjacentHTML('afterbegin',
+            thinkHtml(api.chat.exchanges[info.index], info.index, true, elapsedOf));
+          if (!grabLive(info.index)) return;
+        }
 
         /* 要不要跟着滚动：
            模型模式是在跟模型对话，回答在下面长出来，跟到底；

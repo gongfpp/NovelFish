@@ -556,8 +556,12 @@
   transition: background .3s;
 }
 
-/* 助手：官网 ._4f9bf79 —— position:relative；.d7dc56a8 变体再补 padding-bottom:10px */
-.ds-ai-msg { position: relative; padding-bottom: 10px; }
+/* 助手：官网 ._4f9bf79 —— position:relative；.d7dc56a8 变体再补 padding-bottom:10px
+   isolation:isolate 不是保险，是必须：下面底板的 z-index:-1 会一路逃到最近的
+   「层叠上下文」，然后被无定位祖先（.ds / .ds-thread 那几层）的实心背景按绘制
+   顺序（负 z → 块级背景 → 行内内容）盖掉。表现就是悬停时只有表头那条变灰、
+   底下整片还是白 —— 看着像 bug，其实就是这个。 */
+.ds-ai-msg { position: relative; isolation: isolate; padding-bottom: 10px; }
 .ds-ai-msg:last-child { padding-bottom: 0; }
 
 /* 悬停底板：官网 ._4f9bf79:not(._448e4c0):before
@@ -685,6 +689,11 @@
   line-height: 24px;
 }
 .ds-think[data-open="0"] .ds-think-body { display: none; }
+/* 正文一个字都没有时，圆点和竖线不要画：圆点会悬在空盒子里（top 14.5px 超出
+   10px 高的盒子），竖线高度 calc(100% - 24px) 算出来是负数直接消失 ——
+   一个孤零零的点挂在那儿，一眼假。模型没给推理的场景会走到这里。 */
+.ds-think-body:empty::before,
+.ds-think-body:empty::after { display: none; }
 
 /* 正文左侧的圆点与竖线 —— 官网 .e1675d8b 里插的那两个 div，不是 SVG：
      .ddd26891._9b52f6c > .a510c7ce   5px 圆点，思考中 1.5s 呼吸，落定后转灰

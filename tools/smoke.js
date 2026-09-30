@@ -364,6 +364,35 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
         getComputedStyle(e, '::after').backgroundColor + ' ' +
         getComputedStyle(e, '::after').width + '（表头 ' + head.width + 'px）';
     }));
+
+  /* 悬停底板：官网 ._4f9bf79:not(._448e4c0):before。
+     这里必须验「真的能画出来」—— 底板是 z-index:-1，最近的层叠上下文一旦跑到
+     .ds-ai-msg 外面，它就会被无定位祖先（.ds / .ds-thread）的实心背景按绘制
+     顺序盖掉。症状是悬停时只有表头那条变灰、底下一片白，看着像表头自己出的错。
+     isolation:isolate 就是防这个的，别删。 */
+  await page.locator('.ds-ai-msg').first().hover();
+  await page.waitForTimeout(420);
+  check('消息悬停底板真的画得出来（.ds-ai-msg 自成层叠上下文）',
+    await page.locator('.ds-ai-msg').first().evaluate(e => {
+      const plate = getComputedStyle(e, '::before');
+      const box = e.getBoundingClientRect();
+      return getComputedStyle(e).isolation === 'isolate' &&
+             plate.opacity === '1' &&
+             plate.backgroundColor === 'rgb(245, 246, 247)' &&
+             /* 底板比消息本体左右各宽 16px（官网 --padding-horizontal:16px） */
+             Math.abs(parseFloat(plate.width) - (box.width + 32)) < 1;
+    }),
+    await page.locator('.ds-ai-msg').first().evaluate(e =>
+      getComputedStyle(e).isolation + ' op=' +
+      getComputedStyle(e, '::before').opacity + ' ' +
+      getComputedStyle(e, '::before').backgroundColor));
+  check('悬停时思考表头跟着底板一起变灰（不留一条孤零零的灰带）',
+    await page.locator('.ds-ai-msg').first().evaluate(e => {
+      const head = e.querySelector('.ds-think-head');
+      return !head || getComputedStyle(head).backgroundColor === 'rgb(245, 246, 247)';
+    }));
+  await page.mouse.move(4, 4);
+  await page.waitForTimeout(400);
   check('思考表头按官网 ._245c867 定为 34px 高、下距 2px、sticky 吸顶 z-index 7',
     await page.locator('.ds-think-head').last().evaluate(e => {
       const cs = getComputedStyle(e);
@@ -2062,13 +2091,31 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
       reasoned: withReason.length,
       reasoning: (last.reasoning || '').slice(0, 16),
       answer: (last.a || '').slice(0, 16),
-      rendered: document.querySelectorAll('.ds-think-text').length
+      rendered: document.querySelectorAll('.ds-think-text').length,
+      /* 模型没给推理的那条：刷新/切会话之后不该冒出一个空盒子。
+         空盒子的样子是「圆点悬在半空、竖线高度算成负数直接不画」—— 一眼假。 */
+      openEmpty: Array.prototype.filter.call(
+        document.querySelectorAll('.ds-think[data-open="1"] .ds-think-body'),
+        b => !b.textContent.trim() && !b.children.length).length,
+      bareThink: Array.prototype.filter.call(
+        document.querySelectorAll('.ds-ai-msg[data-mode="model"]'),
+        m => {
+          const it = NovelFish.chat.exchanges[+m.dataset.idx] || {};
+          return !String(it.reasoning || '').trim() && !!m.querySelector('.ds-think');
+        }).length
     };
   });
   check('刷新后模型消息仍在', afterReload.models >= 1, String(afterReload.models));
   check('刷新后思考原文仍然带着，并且渲染回了思考框',
     afterReload.reasoned >= 1 && afterReload.rendered >= afterReload.reasoned,
     JSON.stringify(afterReload));
+  check('模型没给推理的那条，刷新后不会凭空长出一个空的「深度思考」',
+    afterReload.bareThink === 0 && afterReload.openEmpty === 0,
+    'bare=' + afterReload.bareThink + ' openEmpty=' + afterReload.openEmpty);
+  check('空思考体不画圆点与竖线（:empty 守卫）',
+    await page.evaluate(() => Array.prototype.every.call(
+      document.querySelectorAll('.ds-think-body'),
+      b => !b.matches(':empty') || getComputedStyle(b, '::before').display === 'none')));
 
   /* ---- 错误分类：Key 错 / 模型名错 / 连不上，都要说人话 ---- */
   const errBefore = errors.length;
