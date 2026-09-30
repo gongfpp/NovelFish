@@ -103,6 +103,7 @@ js/
   skins/                皮肤实现（deepseek / gpt / _template）
 tools/
   smoke.js              端到端冒烟测试（Playwright）
+  verify-layout.js      对几何：打印实测值，跟 DS 官网样式包的值并排比
   mock-llm.js           零依赖假模型服务
   fixtures/             EPUB 测试样本
 ```
@@ -118,6 +119,18 @@ python3 -m http.server 8931 --bind 127.0.0.1
 # 终端 2
 NODE_PATH=<playwright 所在 node_modules> node tools/smoke.js
 ```
+
+布局还原的依据不是肉眼估算，而是 `chat.deepseek.com` 的线上样式包
+（`fe-static.deepseek.com/chat/static/main.<hash>.css` + 同名 `.js` 里的
+CSS Modules 类名映射表）。「官网类名 → 本地变量」的全表存在
+`css/skins/deepseek.css` 头部；想复核实测几何时：
+
+```bash
+NODE_PATH=<playwright 所在 node_modules> node tools/verify-layout.js
+```
+
+它会关掉浏览器外框（让内容正好铺满视口），依次打印外框壳、首页态、对话态
+三组实测几何，跟脚本头部注释里的期望值逐条比。
 
 330 项断言，覆盖渲染、老板键、EPUB、分享往返、触发词分流、真实模型对话流式、自建剧本、四类错误分类、刷新持久化等。**脚本自带假模型服务，不需要任何真实 API Key。**
 

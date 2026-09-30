@@ -267,8 +267,11 @@
        ------------------------------------------------------------
        判断顺序（这是整个伪装的核心逻辑）：
          提问里出现触发词  → 剧本模式：深度思考里放小说，回答取自剧本
+         「重新生成」      → 沿用这一条原来的模式，只换内容
          否则配了模型      → 模型模式：深度思考里放模型的真实推理
-         否则（没配模型）  → 退回剧本模式，保证开箱即用
+         否则（没配模型）  → 拒绝这一轮：输入退回输入框并提示去配服务。
+                             不偷偷退回剧本 —— 那会让人以为问到了模型，
+                             其实拿到的是别人的稿子，比说清楚糟糕得多。
        ============================================================ */
     runTurn: runTurn,
     abortTurn: abortTurn,
@@ -299,6 +302,15 @@
     app.dataset.browser = state.mask.browser === 'edge' ? 'edge' : 'chrome';
     applyZoom();
     if (NF.chromeFrame) NF.chromeFrame.apply();
+  }
+
+  /**
+   * 外框开关的反馈。关掉外框之后工具栏和地址栏一起没了 —— 控制台那排按钮
+   * 也就点不到了，所以两个入口（控制台的开关、T 键）都得说一句「怎么回来」，
+   * 否则人关掉之后只能靠猜。
+   */
+  function toastChromeFrame(on) {
+    NF.toast(on ? '已显示浏览器外框' : '已隐藏浏览器外框 · 再按 T 显示');
   }
 
   /** 浏览器缩放：作用于视口，和真 Chrome 的 Ctrl+/- 一致 */
@@ -552,28 +564,44 @@
     var prev = replaceIndex >= 0 ? NF.chat.at(replaceIndex) : null;
     var text = String(opts.text || (prev ? prev.q : '') || '').trim();
 
+    /* 路由：**只有命中触发词才出小说**，其余一律交给真实模型。
+       没配模型时不偷偷退回剧本 —— 那会变成「问了半天，答的是别人的稿子」，
+       比直接说清楚糟糕得多。这时把输入原样退回去，让人先配服务。
+
+       「重新生成」是唯一例外：一条消息原先怎么答的，重试还是怎么答。
+       剧本轮次里的提问本来就不含触发词，要是也重新走一遍路由，就会被判成
+       「要走模型」，于是重试永远卡在「没配模型」上 —— 重试的语义是换一条，
+       不是换模式。 */
     var hit = text ? NF.camouflage.matchTrigger(text) : null;
-    var service = NF.llm.ready() ? NF.llm.active() : null;
-    var useModel = !!text && !hit && !!service;
+    var regenScript = replaceIndex >= 0 && !!prev && prev.mode !== 'model';
+
+    if (!text) {
+      if (opts.onRefuse) opts.onRefuse('说点什么再发吧');
+      return { index: -1, refused: 'empty', promise: Promise.resolve(null) };
+    }
+
+    if (!hit && !regenScript && !NF.llm.ready()) {
+      var why = NF.llm.services().length
+        ? '模型服务没配对（接口地址或模型名空着）'
+        : '还没有配置模型服务';
+      if (opts.onRefuse) opts.onRefuse(why + ' —— 去 设置 → 模型 里加一条');
+      return { index: -1, refused: 'no-model', promise: Promise.resolve(null) };
+    }
+
+    var service = (hit || regenScript) ? null : NF.llm.active();
+    var useModel = !hit && !regenScript;
 
     var mode = useModel ? 'model' : 'novel';
     var script = hit ? hit.script : null;
 
     /* 重新生成留在原剧本里换一条。否则「混合」模式下每点一次都会跳到别的
        剧本去，同一个会话里的话题会散掉。 */
-    if (replaceIndex >= 0 && prev && prev.mode !== 'model' && !script) {
+    if (regenScript && !script) {
       var was = null;
       NF.camouflage.raw.forEach(function (x) { if (x.id === prev.scriptId) was = x; });
       if (was) script = was;
     }
     var pickFrom = script ? script.id : state.mask.script;
-
-    // 空输入（直接点发送）：连提问一起从剧本里挑一组，纯伪装
-    var preset = null;
-    if (!text) {
-      preset = NF.camouflage.pick(pickFrom);
-      text = preset.q;
-    }
 
     /* 深度思考默认开合：
          模型模式永远展开（需求就是「展示实际模型中的深度思考」）
@@ -612,15 +640,15 @@
 
     var promise = useModel
       ? modelRound(job, info, opts, text)
-      : scriptRound(job, info, opts, preset, pickFrom);
+      : scriptRound(job, info, opts, null, pickFrom);
 
     return { index: index, info: info, abort: abortTurn, promise: promise };
   }
 
   /* --- 剧本模式：思考放小说，回答是伪装内容，逐字吐出来 --- */
-  function scriptRound(job, info, opts, preset, pickFrom) {
+  function scriptRound(job, info, opts, unused, pickFrom) {
     var index = info.index;
-    var picked = preset && preset.a != null ? preset : NF.camouflage.pick(pickFrom);
+    var picked = NF.camouflage.pick(pickFrom);
     var answer = String(picked.a == null ? '' : picked.a);
 
     // 「用时 N 秒」：由内容长短推一个像样的数，别每次都是同一个值
@@ -1171,7 +1199,10 @@
     bindSwitch('swOpen', 'openThinking', 'mask', function () {
       mountSkin(state.skin, { remount: true, silent: true });
     });
-    bindSwitch('swChrome', 'chrome', 'mask', applyShell);
+    bindSwitch('swChrome', 'chrome', 'mask', function (on) {
+      applyShell();
+      toastChromeFrame(on);
+    });
 
     // 外框系统 / 浏览器
     $('segOs').addEventListener('click', function (e) {
@@ -1475,6 +1506,14 @@
         return;
       }
 
+      // ⌘/Ctrl + J：新对话（DeepSeek 侧栏胶囊上标的就是这个键）
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'j' || e.key === 'J')) {
+        e.preventDefault();
+        var nc = document.querySelector('.ds-newchat') || document.querySelector('[data-newchat]');
+        if (nc) nc.click();
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
         openConsole();
@@ -1553,6 +1592,7 @@
             NF.store.patch({ mask: { chrome: on } });
             $('swChrome').setAttribute('aria-checked', String(on));
             applyShell();
+            toastChromeFrame(on);
           } else if (e.key === 'f' || e.key === 'F') {
             toggleFullscreen();
           } else {

@@ -171,7 +171,48 @@
     return { reasoning: String(think || ''), content: String(text || '') };
   }
 
-  function readStream(res, opts) {
+  /* ---------------- 非流式的兜底：切片转发 ---------------- */
+
+  var REPLAY_INTERVAL = 16;    // 一帧多久
+  var REPLAY_FRAMES = 64;      // 整段大约分多少帧吐完（长短自适应）
+
+  /**
+   * 把「已经拿到的整段文字」按帧倒出去。
+   *
+   * 为什么需要它：`stream` 只是个请求，不是保证。用户关掉流式开关、
+   * 或者网关不认这个参数直接回一整坨 JSON 时，屏幕就会啪一下全出来 ——
+   * 一眼假。所以这里再切一遍，让上屏节奏和真流式看不出区别。
+   *
+   * @param {object} job    跑着的那一轮（abort 会把它标成 stopped）
+   * @param {string} text   整段文字
+   * @param {object} opts   有 onReasoning / onContent
+   * @param {string} kind   'reasoning' 或 'content'
+   */
+  function replay(job, text, opts, kind) {
+    var full = String(text || '');
+    if (!full) return Promise.resolve();
+
+    var on = kind === 'reasoning' ? opts.onReasoning : opts.onContent;
+    if (!on) return Promise.resolve();
+
+    var step = Math.max(1, Math.ceil(full.length / REPLAY_FRAMES));
+    var i = 0;
+
+    return new Promise(function (resolve) {
+      function tick() {
+        job.timer = null;
+        if (job.stopped) { resolve(); return; }
+        var from = i;
+        i = Math.min(full.length, i + step);
+        if (i > from) on(full.slice(from, i), full.slice(0, i));
+        if (i >= full.length) { resolve(); return; }
+        job.timer = setTimeout(tick, REPLAY_INTERVAL);
+      }
+      tick();
+    });
+  }
+
+  function readStream(res, opts, job) {
     var reader = res.body.getReader();
     var dec = new TextDecoder('utf-8');
     var buf = '';
@@ -200,6 +241,7 @@
 
     function pump() {
       return reader.read().then(function (r) {
+        if (job && job.stopped) { try { reader.cancel(); } catch (e) { /* 已经关了 */ } return acc; }
         if (r.done) { feed(buf); buf = ''; return acc; }
         buf += dec.decode(r.value, { stream: true });
         var lines = buf.split('\n');
@@ -227,6 +269,13 @@
    *   onContent(delta, acc)    正文增量
    * @returns {{promise: Promise<{reasoning,content}>, abort: function}}
    */
+  /** 服务端到底有没有按 SSE 回？有的网关收了 stream 也照回一坨 JSON */
+  function looksSse(res) {
+    var ct = '';
+    try { ct = (res.headers.get('content-type') || '').toLowerCase(); } catch (e) { ct = ''; }
+    return ct.indexOf('event-stream') >= 0;
+  }
+
   function chat(opts) {
     opts = opts || {};
     var svc = opts.service || active();
@@ -252,6 +301,9 @@
       else opts.signal.addEventListener('abort', function () { ctl.abort(); });
     }
 
+    /* 这一轮的生命周期。abort() 之后 HTTP 与后面那截「切片转发」都要停 */
+    var job = { stopped: false, timer: null };
+
     var headers = { 'Content-Type': 'application/json' };
     if (svc.apiKey) headers.Authorization = 'Bearer ' + svc.apiKey;
 
@@ -268,12 +320,22 @@
       throw networkError(url, err);
     }).then(function (res) {
       if (!res.ok) return res.text().then(function (t) { throw httpError(res.status, t); });
-      if (stream && res.body && res.body.getReader) return readStream(res, opts);
-      return res.json().then(function (json) {
-        var d = deltaOf(json) || { reasoning: '', content: '' };
-        if (d.reasoning && opts.onReasoning) opts.onReasoning(d.reasoning, d.reasoning);
-        if (d.content && opts.onContent) opts.onContent(d.content, d.content);
-        return d;
+
+      /* 真流式：边收边转发 */
+      if (stream && res.body && res.body.getReader && looksSse(res)) return readStream(res, opts, job);
+
+      /* 其余情况一律先把整段读下来，再切片倒出去 —— 屏幕上一样是逐字长出来的 */
+      return res.text().then(function (raw) {
+        var json = null;
+        try { json = JSON.parse(raw); } catch (e) { json = null; }
+        var d = (json && deltaOf(json)) || null;
+        if (!d) {
+          if (!raw) throw fail('http', '服务端返回了空响应');
+          throw fail('http', '返回内容不是合法的 OpenAI 兼容格式：' + brief(raw));
+        }
+        return replay(job, d.reasoning, opts, 'reasoning')
+          .then(function () { return replay(job, d.content, opts, 'content'); })
+          .then(function () { return d; });
       });
     }).then(function (acc) {
       clearTimeout(timer);
@@ -283,7 +345,15 @@
       throw err;
     });
 
-    return { promise: promise, abort: function () { clearTimeout(timer); ctl.abort(); } };
+    return {
+      promise: promise,
+      abort: function () {
+        job.stopped = true;
+        if (job.timer) { clearTimeout(job.timer); job.timer = null; }
+        clearTimeout(timer);
+        ctl.abort();
+      }
+    };
   }
 
   function rejected(err) {

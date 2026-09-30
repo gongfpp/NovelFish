@@ -344,9 +344,55 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   });
   check('正文滚过去后思考表头仍冻在顶部',
     stickDelta !== null && Math.abs(stickDelta) < 2, 'delta=' + stickDelta);
-  check('冻结条下方是官网的渐隐遮罩',
-    await page.locator('.ds-think-head').last().evaluate(e =>
-      /gradient/.test(getComputedStyle(e, '::after').backgroundImage)));
+  // 官网 ._245c867:after 是 content:"" + 不透明底板 + width:calc(100% + 10px) +
+  // height:calc(100% + 1px) + top:-1px。计算值早就被浏览器算成像素了（840+10=850），
+  // 所以这里比对「算出来的像素」而不是比对 calc 字符串。
+  check('冻结条是不透明底板，且 ::after 按官网 ._245c867:after 盖住整行并右溢 10px',
+    await page.locator('.ds-think-head').last().evaluate(e => {
+      const cs = getComputedStyle(e);
+      const after = getComputedStyle(e, '::after');
+      const solid = c => /^rgb\(/.test(c) && !/rgba\(.+,\s*0\)$/.test(c);
+      const head = e.getBoundingClientRect();
+      return solid(cs.backgroundColor) && solid(after.backgroundColor) &&
+             after.top === '-1px' &&
+             Math.abs(parseFloat(after.width) - (head.width + 10)) < 1 &&
+             Math.abs(parseFloat(after.height) - (head.height + 1)) < 1;
+    }),
+    await page.locator('.ds-think-head').last().evaluate(e => {
+      const head = e.getBoundingClientRect();
+      return getComputedStyle(e).backgroundColor + ' / after ' +
+        getComputedStyle(e, '::after').backgroundColor + ' ' +
+        getComputedStyle(e, '::after').width + '（表头 ' + head.width + 'px）';
+    }));
+  check('思考表头按官网 ._245c867 定为 34px 高、下距 2px、sticky 吸顶 z-index 7',
+    await page.locator('.ds-think-head').last().evaluate(e => {
+      const cs = getComputedStyle(e);
+      return cs.height === '34px' && cs.marginBottom === '2px' &&
+             cs.position === 'sticky' && cs.top === '0px' && cs.zIndex === '7';
+    }));
+  check('思考表头是 markdown-base 16px/28px + label-secondary（官网 ._4d41763 / ._5ab5d64）',
+    await page.locator('.ds-think-head').last().evaluate(e => {
+      const cs = getComputedStyle(e);
+      return (cs.fontSize + '/' + cs.lineHeight) === '16px/28px' &&
+             cs.color === 'rgb(97, 102, 107)';
+    }));
+  check('思考图标 16px、右侧留 6px（官网 ._4d41763 margin-right）',
+    await page.locator('.ds-think-icon').last().evaluate(e => {
+      const r = e.getBoundingClientRect();
+      return Math.round(r.width) === 16 && Math.round(r.height) === 16 &&
+             getComputedStyle(e).marginRight === '6px';
+    }));
+  check('思考正文 padding 5px 0 5px 22px + 14px/24px + label-secondary（官网 .e1675d8b）',
+    await page.locator('.ds-think-body').last().evaluate(e => {
+      const cs = getComputedStyle(e);
+      return cs.padding === '5px 0px 5px 22px' &&
+             (cs.fontSize + '/' + cs.lineHeight) === '14px/24px' &&
+             cs.color === 'rgb(97, 102, 107)' &&
+             cs.backgroundColor === 'rgba(0, 0, 0, 0)';
+    }));
+  check('思考块与回答之间 10px（官网 ._74c0879 + .ds-assistant-message-main-content）',
+    await page.locator('.ds-ai-msg').last().locator('.ds-answer').evaluate(e =>
+      getComputedStyle(e).marginTop === '10px'));
 
   await page.locator('.ds-think-head').last().click();
   await page.waitForTimeout(250);
@@ -522,13 +568,15 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
 
   /* ---------- 9. 发送消息 ---------- */
   const msgBefore = await page.locator('.ds-ai-msg').count();
-  await page.locator('.ds-input').fill('帮我把这个方案的落地步骤梳理一下');
+  // 带一个阅读触发词：走剧本才出小说，普通问题现在一律交给真实模型
+  // （没配模型会被明确退回，见第 24 节），这里要测的是阅读流程下的发送
+  await page.locator('.ds-input').fill('帮我把这个方案的落地步骤梳理一下，接着读下去');
   await page.locator('.ds-input').press('Enter');
   await page.waitForTimeout(400);
   const msgAfter = await page.locator('.ds-ai-msg').count();
   check('发送后追加新对话', msgAfter === msgBefore + 1, `${msgBefore}->${msgAfter}`);
-  check('刚发出时表头是「思考中…」',
-    (await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent()).trim() === '思考中…',
+  check('刚发出时表头是「正在思考」',
+    (await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent()).trim() === '正在思考',
     await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent());
   await settle();
   check('最新思考框处于展开态',
@@ -541,8 +589,8 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('输入框里打的字成为提问内容', typed.includes('落地步骤'), typed.slice(0, 20));
   check('回答是逐字打上来的（走完就有完整正文）',
     (await page.locator('.ds-ai-msg').last().locator('.ds-answer').textContent()).trim().length > 40);
-  check('表头落定成「已深度思考（用时 N 秒）」',
-    /^已深度思考（用时 \d+ 秒）$/.test(
+  check('表头落定成「已思考（用时 N 秒）」',
+    /^已思考（用时 \d+ 秒）$/.test(
       (await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent()).trim()),
     await page.locator('.ds-ai-msg').last().locator('.ds-think-label').textContent());
 
@@ -571,12 +619,16 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('切换会话后仍能读到正文',
     (await page.locator('.ds-ai-msg').last().locator('.nf-p').count()) > 2);
 
-  // 搜索：官网是「搜索按钮 → 就地展开输入框」
+  // 搜索：官网侧栏顶部的搜索按钮 → 就地展开输入框（占用「开启新对话」那条槽位）
   const total = await page.locator('.ds-hist-item').count();
-  check('侧栏默认是「搜索」按钮', await page.locator('.ds-searchbtn').isVisible());
-  await page.locator('.ds-searchbtn').click();
+  check('侧栏顶部有搜索按钮、下面就是「开启新对话」胶囊',
+    await page.locator('.ds-side-search').isVisible() &&
+    await page.locator('.ds-newchat').isVisible());
+  await page.locator('.ds-side-search').click();
   await page.waitForTimeout(300);
   check('点搜索按钮展开输入框', await page.locator('.ds-search input').isVisible());
+  check('搜索展开时「开启新对话」胶囊让位',
+    !(await page.locator('.ds-newchat').isVisible()));
   await page.locator('.ds-search input').fill('接口');
   await page.waitForTimeout(450);
   const filtered = await page.locator('.ds-hist-item').count();
@@ -585,7 +637,114 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   await page.waitForTimeout(350);
   check('清空搜索后恢复全部对话',
     await page.locator('.ds-hist-item').count() === total);
-  check('清空后搜索按钮回到原位', await page.locator('.ds-searchbtn').isVisible());
+  check('清空后「开启新对话」胶囊回到原位',
+    await page.locator('.ds-newchat').isVisible());
+
+  /* ---------- 10b. 侧栏几何逐条对齐官网 ----------
+     官网类：.b8812f16(侧栏) / ._262baab(logo 行) / .e066abb8(logo) / ._5a8ac7a(开启新对话) */
+  const sideGeo = await page.evaluate(() => {
+    const r = sel => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)];
+    };
+    const cs = (sel, p) => { const el = document.querySelector(sel); return el ? getComputedStyle(el)[p] : null; };
+    return {
+      side: r('.ds-side'), head: r('.ds-side-head'), logo: r('.ds-logo'),
+      newchat: r('.ds-newchat'),
+      sideBorderRight: cs('.ds-side', 'borderRightWidth'),
+      headPad: cs('.ds-side-head', 'padding'),
+      headMarginBottom: cs('.ds-side-head', 'marginBottom'),
+      newchatRadius: cs('.ds-newchat', 'borderRadius'),
+      newchatBg: cs('.ds-newchat', 'backgroundColor'),
+      newchatShadow: cs('.ds-newchat', 'boxShadow'),
+      newchatFont: cs('.ds-newchat', 'fontSize') + '/' + cs('.ds-newchat', 'fontWeight'),
+      newchatIcon: r('.ds-newchat svg'),
+      newchatIconMargin: cs('.ds-newchat svg', 'marginRight'),
+      hint: getComputedStyle(document.querySelector('.ds-newchat'), '::after').content
+    };
+  });
+  check('侧栏 261px、右侧 1px 分隔线（官网 .b8812f16 / --sider-width）',
+    sideGeo.side[2] === 261 && sideGeo.sideBorderRight === '1px',
+    sideGeo.side.join(',') + ' border=' + sideGeo.sideBorderRight);
+  check('侧栏 logo 行高 48px、padding 15px 0 10px 4px、下距 16px（官网 ._262baab）',
+    sideGeo.head[3] === 48 && sideGeo.headPad === '15px 0px 10px 4px' &&
+    sideGeo.headMarginBottom === '16px',
+    sideGeo.head.join(',') + ' ' + sideGeo.headPad + ' mb=' + sideGeo.headMarginBottom);
+  check('侧栏 logo 是官网 143×23（._e066abb8）',
+    sideGeo.logo[2] === 143 && sideGeo.logo[3] === 23, sideGeo.logo.join(','));
+  check('「开启新对话」胶囊 40px 高 / 圆角 100px / 白底 / 14px 500（官网 ._5a8ac7a）',
+    sideGeo.newchat[3] === 40 && sideGeo.newchatRadius === '100px' &&
+    sideGeo.newchatBg === 'rgb(255, 255, 255)' && sideGeo.newchatFont === '14px/500',
+    sideGeo.newchat.join(',') + ' ' + sideGeo.newchatRadius + ' ' + sideGeo.newchatFont);
+  // 官网 ._5a8ac7a 默认是三层阴影，:hover 换成另一套三层阴影。
+  // 这段跑的时候鼠标可能正停在胶囊上（前面刚 hover 过），两套都收 —— 都是官网真实值。
+  check('胶囊是三层阴影（不是描边），悬停时浮出 ⌘ J 提示',
+    (/rgba\(72, 104, 178, 0\.04\) 0px -2px 2px/.test(sideGeo.newchatShadow) &&
+     /rgba\(106, 111, 117, 0\.09\) 0px 2px 2px/.test(sideGeo.newchatShadow)
+     || /rgba\(72, 104, 178, 0\.04\) 0px 4px 4px/.test(sideGeo.newchatShadow) &&
+        /rgba\(106, 111, 117, 0\.1\) 0px 6px 6px/.test(sideGeo.newchatShadow)) &&
+    /⌘ J/.test(sideGeo.hint),
+    sideGeo.newchatShadow + ' hint=' + sideGeo.hint);
+  check('胶囊里的 ⊕ 是 16px、右侧留 6px（官网 ._1c42ad7）',
+    sideGeo.newchatIcon[2] === 16 && sideGeo.newchatIcon[3] === 16 &&
+    sideGeo.newchatIconMargin === '6px',
+    sideGeo.newchatIcon.join(',') + ' mr=' + sideGeo.newchatIconMargin);
+
+  /* ---------- 10c. 主区列宽逐条对齐官网 ----------
+     官网：消息列 840px（._765a5cd）、输入框 776px（._871cbca 的 (100% - 840px)/2） */
+  const colGeo = await page.evaluate(() => {
+    const r = sel => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)];
+    };
+    const cs = (sel, p) => { const el = document.querySelector(sel); return el ? getComputedStyle(el)[p] : null; };
+    const pv = (sel, v) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).getPropertyValue(v).trim() : null;
+    };
+    return {
+      thread: r('.ds-thread'), inner: r('.ds-thread-inner'),
+      threadPad: cs('.ds-thread', 'paddingLeft'),
+      composer: r('.ds-composer'), composerMargin: cs('.ds-composer', 'marginLeft'),
+      box: r('.ds-box'), disclaimer: r('.ds-disclaimer'),
+      disclaimerFont: cs('.ds-disclaimer', 'fontSize') + '/' + cs('.ds-disclaimer', 'lineHeight'),
+      disclaimerAlign: cs('.ds-disclaimer', 'textAlign'),
+      top: r('.ds-top'), step: pv('.ds', '--ds-max-w'),
+      boxW: pv('.ds', '--ds-box-w'),
+      stagePos: cs('.ds-stage', 'position'),
+      bubbleRight: r('.ds-bubble'),
+      side: r('.ds-side'), stage: r('.ds-stage')
+    };
+  });
+  check('消息列 840px 居中（官网 --message-list-max-width）',
+    colGeo.inner[2] === 840 && colGeo.step === '840px', colGeo.inner.join(','));
+  // 官网内联 _r：paddingLeft/Right = calc((100% - var(--message-list-max-width)) / 2)。
+  // calc 里的 100% 解析成 .ds-thread 的包含块（也就是 .ds-stage 的内容宽），
+  // 不是「侧栏 + 主区」—— 侧栏是它的兄弟节点，不参与这条计算。
+  const wantPad = ((colGeo.stage[2] - 840) / 2).toFixed(1) + 'px';
+  check('滚动口左右内边距是 calc((100% - 840px)/2)（官网内联 _r）',
+    colGeo.threadPad === wantPad,
+    colGeo.threadPad + ' 期望 ' + wantPad + '（stage ' + colGeo.stage[2] + 'px）');
+  check('撑出来的内边距让内含的 840px 列真正居中（内边距 = 列左缘 − 滚动口左缘）',
+    Math.abs((colGeo.inner[0] - colGeo.thread[0]) - parseFloat(colGeo.threadPad)) < 1,
+    'inner.x=' + colGeo.inner[0] + ' thread.x=' + colGeo.thread[0] +
+    ' pad=' + colGeo.threadPad);
+  check('输入框 776px（840 − 2×32）、输入区左右各 32px（官网 ._871cbca）',
+    colGeo.box[2] === 776 && colGeo.boxW === '776px' && colGeo.composerMargin === '32px',
+    colGeo.box.join(',') + ' margin=' + colGeo.composerMargin);
+  check('免责声明与输入框同宽、11px/16px 居中（官网 ._0fcaa63）',
+    colGeo.disclaimer[2] === 776 && colGeo.disclaimerFont === '11px/16px' &&
+    colGeo.disclaimerAlign === 'center',
+    colGeo.disclaimer.join(',') + ' ' + colGeo.disclaimerFont);
+  check('顶栏 60px 高（官网 ._08dce46）', colGeo.top[3] === 60, colGeo.top.join(','));
+  check('用户气泡右边缘贴齐内容列右缘（官网 .fbb737a4）',
+    colGeo.bubbleRight[0] + colGeo.bubbleRight[2] ===
+    colGeo.inner[0] + colGeo.inner[2],
+    colGeo.bubbleRight.join(',') + ' vs ' + colGeo.inner.join(','));
 
   /* ---------- 11. 侧边栏开关 ---------- */
   await page.locator('.ds-side-collapse').click();
@@ -1045,6 +1204,81 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
 
+  /* ---------- 16b. 关掉浏览器外框：只剩网站内容 ----------
+     外框一关，工具栏和地址栏一起消失 —— 控制台那排按钮也就点不到了，
+     所以这里除了「关掉之后干净」之外，还要验证「怎么回来」。 */
+  await openConsole('look');
+  check('外观面板里有「显示浏览器外框」开关，默认是开的',
+    await page.locator('#swChrome').getAttribute('aria-checked') === 'true');
+  await page.locator('#swChrome').click();
+  await page.waitForTimeout(400);
+  check('关掉后 #app 进入 bare 外壳',
+    await page.locator('#app').getAttribute('data-shell') === 'bare');
+  check('关掉后开关自己同步成关',
+    await page.locator('#swChrome').getAttribute('aria-checked') === 'false');
+  check('关掉时给出「怎么回来」的提示（工具栏已经没了）',
+    /再按 T 显示/.test(await page.locator('#toastWrap').textContent()),
+    (await page.locator('#toastWrap').textContent()).trim());
+
+  const bare = await page.evaluate(() => {
+    const box = sel => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)];
+    };
+    const frame = document.querySelector('.chrome');
+    return {
+      frame: box('.chrome'), viewport: box('#skinRoot'),
+      tabbar: getComputedStyle(document.querySelector('.chrome-tabbar')).display,
+      toolbar: getComputedStyle(document.querySelector('.chrome-toolbar')).display,
+      radius: getComputedStyle(frame).borderRadius,
+      shadow: getComputedStyle(frame).boxShadow,
+      vw: window.innerWidth, vh: window.innerHeight
+    };
+  });
+  check('bare 下外框壳铺满整个视口、圆角与投影都归零（不是缩在中间的小窗口）',
+    bare.frame[0] === 0 && bare.frame[1] === 0 &&
+    bare.frame[2] === bare.vw && bare.frame[3] === bare.vh &&
+    bare.radius === '0px' && bare.shadow === 'none',
+    bare.frame.join(',') + ' 视口=' + bare.vw + '×' + bare.vh +
+    ' r=' + bare.radius + ' shadow=' + bare.shadow);
+  check('bare 下标签栏与工具栏彻底不占位',
+    bare.tabbar === 'none' && bare.toolbar === 'none',
+    bare.tabbar + ' / ' + bare.toolbar);
+  check('bare 下网站内容正好占满视口（DeepSeek 页与视口 1:1）',
+    bare.viewport[2] === bare.vw && bare.viewport[3] === bare.vh,
+    bare.viewport.join(',') + ' 视口=' + bare.vw + '×' + bare.vh);
+  await shot('16b-bare');
+
+  // 回来：先把控制台收起、焦点交回页面，再按 T
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+  await page.keyboard.press('t');
+  await page.waitForTimeout(400);
+  check('bare 下 T 键能把外框叫回来',
+    await page.locator('#app').getAttribute('data-shell') === 'chrome');
+  check('外框回来后标签栏与工具栏都在',
+    await page.locator('#tabbar').isVisible() && await page.locator('#toolbar').isVisible());
+  check('外框回来后开关同步成开',
+    await page.locator('#swChrome').getAttribute('aria-checked') === 'true');
+
+  // 再关一次，验证「没有外框也打得开控制台」—— 这是关掉之后唯一的自救入口
+  await page.keyboard.press('t');
+  await page.waitForTimeout(400);
+  check('再按一次 T 又能关掉', await page.locator('#app').getAttribute('data-shell') === 'bare');
+  await page.keyboard.press('Control+,');
+  await page.waitForTimeout(350);
+  check('bare 下仍能打开控制台', await page.locator('#console').isVisible());
+  await page.locator('#consoleClose').click();
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+  await page.keyboard.press('t');
+  await page.waitForTimeout(400);
+  check('收尾回到有外框的常态',
+    await page.locator('#app').getAttribute('data-shell') === 'chrome');
+
   /* ---------- 17. 截图：macOS 外框下的完整体 ---------- */
   await page.locator('.ds-thread').evaluate(e => { e.scrollTop = e.scrollHeight; });
   await page.waitForTimeout(300);
@@ -1058,10 +1292,51 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   await page.locator('.ds-newchat').click();
   await page.waitForTimeout(400);
   check('新建对话进入欢迎页', await page.locator('.ds-stage.is-welcome').count() === 1);
-  check('欢迎页显示「Hi，我是 DeepSeek」',
-    (await page.locator('.ds-welcome-title').textContent()).includes('DeepSeek'));
+  check('欢迎页显示「欢迎回来，随时开始吧」',
+    (await page.locator('.ds-welcome-title').textContent()).includes('欢迎回来'));
   check('欢迎页没有消息', await page.locator('.ds-ai-msg').count() === 0);
   check('欢迎页不显示顶部冻结条', await page.locator('.ds-think-head').count() === 0);
+  /* 官网首页（b2）：._660ca72 是 inset:0 的绝对层，._9a2f8e4 居中列 840 / padding 0 32px 64px，
+     欢迎块和输入框一起居中，且**不渲染**免责声明（bX 只在对话页的吸底容器 b0 里）。 */
+  const homeGeo = await page.evaluate(() => {
+    const r = sel => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)];
+    };
+    const cs = (sel, p) => { const el = document.querySelector(sel); return el ? getComputedStyle(el)[p] : null; };
+    return {
+      stage: r('.ds-stage'), welcome: r('.ds-welcome'), title: r('.ds-welcome-title'),
+      mark: r('.ds-welcome-mark'), box: r('.ds-box'), composer: r('.ds-composer'),
+      stagePos: cs('.ds-stage', 'position'),
+      stagePad: cs('.ds-stage', 'padding'),
+      titleFont: cs('.ds-welcome-title', 'fontSize') + '/' + cs('.ds-welcome-title', 'lineHeight') +
+                 '/' + cs('.ds-welcome-title', 'fontWeight'),
+      markMargin: cs('.ds-welcome-mark', 'marginRight'),
+      disclaimerVisible: !!document.querySelector('.ds-disclaimer') &&
+        document.querySelector('.ds-disclaimer').getClientRects().length > 0,
+      topVisible: r('.ds-top') !== null && document.querySelector('.ds-top').getClientRects().length > 0,
+      ds: r('.ds')
+    };
+  });
+  check('欢迎页是覆盖整块主区的居中层（官网 ._660ca72 / ._9a2f8e4）',
+    homeGeo.stagePos === 'absolute' && homeGeo.stagePad === '0px 32px 64px' &&
+    homeGeo.stage[3] === homeGeo.ds[3] && homeGeo.stage[2] === homeGeo.ds[2] - 261,
+    homeGeo.stagePos + ' ' + homeGeo.stagePad + ' stage=' + homeGeo.stage.join(',') +
+    ' ds=' + homeGeo.ds.join(','));
+  check('欢迎块和输入框同栏 776px、左缘对齐（840 − 2×32）',
+    homeGeo.welcome[0] === homeGeo.box[0] && homeGeo.welcome[2] === 776 &&
+    homeGeo.box[2] === 776,
+    homeGeo.welcome.join(',') + ' / ' + homeGeo.box.join(','));
+  check('欢迎语 24px/32px/600、鲸鱼 34×25 右距 10px（官网 ._6c7e7df / .ce41ed1b）',
+    homeGeo.titleFont === '24px/32px/600' &&
+    homeGeo.mark[2] === 34 && homeGeo.mark[3] === 25 && homeGeo.markMargin === '10px',
+    homeGeo.titleFont + ' mark=' + homeGeo.mark.join(',') + ' mr=' + homeGeo.markMargin);
+  check('欢迎页不显示免责声明（官网首页不渲染 bX）',
+    homeGeo.disclaimerVisible === false);
+  check('欢迎页顶栏仍在，且浮在居中层之上（官网 .the-header 透明浮层）',
+    homeGeo.topVisible === true);
   check('欢迎页的输入框换成官网新会话态的大范围柔光',
     await page.locator('.ds-box').evaluate(e => {
       const s = getComputedStyle(e).boxShadow;
@@ -1069,7 +1344,8 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
     }), await page.locator('.ds-box').evaluate(e => getComputedStyle(e).boxShadow));
   await shot('09-welcome');
 
-  await page.locator('.ds-input').fill('帮我评审一段系统设计');
+  // 同样带上阅读触发词 —— 新会话这一路也只测「发出去了、落到正文了」
+  await page.locator('.ds-input').fill('帮我评审一段系统设计，接着读');
   await page.locator('.ds-input').press('Enter');
   await page.waitForTimeout(400);
   check('新对话发送后进入正文', await page.locator('.ds-stage.is-welcome').count() === 0);
@@ -1411,15 +1687,24 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('默认不带任何模型服务',
     await page.evaluate(() => NovelFish.api.model.list().length) === 0);
 
-  // 没配模型：不含触发词的提问也只能走剧本，否则应用开箱就哑了
-  await page.locator('.ds-input').fill('这段代码的边界条件写对了吗');
+  // 没配模型：不含触发词的提问会被**明确退回**，输入还回输入框。
+  // 这里不偷偷退回剧本 —— 那会让人以为问到了模型，其实拿到的是别人的稿子。
+  const noModelBefore = await page.evaluate(() => NovelFish.chat.exchanges.length);
+  const askNoModel = '这段代码的边界条件写对了吗';
+  await page.locator('.ds-input').fill(askNoModel);
   await page.locator('.ds-input').press('Enter');
-  await settle();
-  const noModel = await turnView();
-  check('没有模型服务时，不含触发词的提问也走剧本',
-    noModel.storeMode === 'novel' && noModel.hasNovel,
-    noModel.storeMode + ' / novel=' + noModel.hasNovel);
-  check('降级到剧本时思考里仍然是小说', noModel.paras > 2, String(noModel.paras));
+  await page.waitForTimeout(500);
+  const noModelAfter = await page.evaluate(() => NovelFish.chat.exchanges.length);
+  check('没有模型服务时，不含触发词的提问不会被伪装成「模型答的」',
+    noModelAfter === noModelBefore, `${noModelBefore} -> ${noModelAfter}`);
+  check('没配模型时给出明确提示，而不是静默无响应',
+    /还没有配置模型服务/.test(await page.locator('#toastWrap').textContent()),
+    (await page.locator('#toastWrap').textContent()).trim());
+  check('被退回的输入原样留在输入框里（不吞掉人打的那一句）',
+    (await page.locator('.ds-input').inputValue()) === askNoModel,
+    await page.locator('.ds-input').inputValue());
+  await page.locator('.ds-input').fill('');
+  await page.waitForTimeout(150);
 
   /* ---- 在「模型」面板里配一条服务（顺便验面板本身可用） ---- */
   await openConsole('model');
@@ -1466,7 +1751,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   await page.locator('.ds-input').press('Enter');
   await page.waitForTimeout(330);
   const stream1 = await turnView();
-  check('真实对话：表头先显示「思考中…」', stream1.label === '思考中…', stream1.label);
+  check('真实对话：表头先显示「正在思考」', stream1.label === '正在思考', stream1.label);
   check('真实对话：思考进行中带流式态', stream1.streaming);
   check('真实对话：思考框里是推理文本而不是小说',
     stream1.thinkLen > 4 && stream1.thinkLen < mockMod.REASONING.length && !stream1.hasNovel,
@@ -1489,7 +1774,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('回答完整渲染到了气泡里',
     modelDone.answerLen >= mockMod.ANSWER.length, modelDone.answerLen + '/' + mockMod.ANSWER.length);
   check('表头落定成带真实用时的文案',
-    /^已深度思考（用时 \d+ 秒）$/.test(modelDone.label), modelDone.label);
+    /^已思考（用时 \d+ 秒）$/.test(modelDone.label), modelDone.label);
   check('模型模式下「深度思考」默认就是展开的', modelDone.thinkOpen === '1');
   check('模型模式下思考框里没有小说', !modelDone.hasNovel);
   await shot('41-model-stream');
@@ -1513,16 +1798,17 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   await page.locator('.ds-input').press('Enter');
   await page.waitForTimeout(380);
   const trigMid = await turnView();
-  check('命中触发词：表头也是「思考中…」（外观上与真实对话无异）',
-    trigMid.label === '思考中…', trigMid.label);
-  check('命中触发词：思考框里立刻挂上小说', trigMid.hasNovel && trigMid.paras > 2,
+  check('命中触发词：表头也是「正在思考」（外观上与真实对话无异）',
+    trigMid.label === '正在思考', trigMid.label);
+  // SHARE_TXT 这本小书每章只有 2 段，别拿大书的段数当阈值
+  check('命中触发词：思考框里立刻挂上小说', trigMid.hasNovel && trigMid.paras >= 2,
     String(trigMid.paras));
 
   await settle();
   const trigDone = await turnView();
   check('命中触发词的这条落成剧本模式', trigDone.storeMode === 'novel', trigDone.storeMode);
   check('剧本模式有「用时」，表头同样落定',
-    /^已深度思考（用时 \d+ 秒）$/.test(trigDone.label), trigDone.label);
+    /^已思考（用时 \d+ 秒）$/.test(trigDone.label), trigDone.label);
   check('回答取自剧本而不是模型',
     !trigDone.storeAnswer.includes('收到') && trigDone.storeAnswer.length > 10,
     trigDone.storeAnswer.slice(0, 18));
@@ -1573,9 +1859,13 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
       const id = list[list.length - 1].scriptId;
       return NovelFish.camouflage.raw.some(s => s.id === id && s.custom);
     }));
-  check('回答就是自建剧本里写的那句', custom.storeAnswer === '正常，没有告警。', custom.storeAnswer);
+  // 自建剧本里写了两组，取哪一组由全局轮换游标决定 —— 两句话都对
+  check('回答就是自建剧本里写的那句',
+    ['正常，没有告警。', '跑完了，结果已归档。'].includes(custom.storeAnswer),
+    custom.storeAnswer);
   check('自建剧本可以让「深度思考」默认收起', custom.thinkOpen === '0', String(custom.thinkOpen));
-  check('收起时正文仍在 DOM 里（点开即读）', custom.hasNovel && custom.paras > 2);
+  check('收起时正文仍在 DOM 里（点开即读）', custom.hasNovel && custom.paras >= 2,
+    String(custom.paras));
   check('配了模型也不会截走触发词提问', mock.calls.length === 0, String(mock.calls.length));
 
   // 删掉自建剧本，别影响后面的用例
