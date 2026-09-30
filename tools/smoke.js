@@ -423,6 +423,44 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
     await page.locator('.ds-think-icon').last().evaluate(e =>
       getComputedStyle(e).color === 'rgb(57, 100, 254)'),
     await page.locator('.ds-think-icon').last().evaluate(e => getComputedStyle(e).color));
+  /* 图标路径完整性 —— 这两条 path 是从官网 main.js 里逐字节抄的（圆点 207 字符、
+     星形 2370 字符），而抄的时候是按固定宽度**硬折行拼字符串**的。折行处一旦落在
+     数字中间，`15.2811` `4.41466` 会被拼成 `15.28114.41466`，SVG 按最长匹配读成
+     15.28114 和 .41466 —— 坐标全错位，星形会从完整的四角星塌成一坨碎块
+     （线上曾经就是这样：星形丢了 25 个空格、圆点丢了 2 个，看着像「这个图标做不出来」）。
+     三道关卡：长度（错了好读）→ sha256（精确，同长度替换也拦得住）→ 包围盒（确实画对了）。
+     ⚠ 实测过：**包围盒那道拦不住这个 bug** —— 坏版本的星形量出来还是 14.244 的方形
+     （塌掉的坐标刚好也铺满整个 viewBox），只是里面是一坨碎块。所以守卫是 sha256，
+     包围盒只负责说明「画出来的形状对」。 */
+  const thinkPaths = await page.locator('.ds-think-icon').last().locator('svg path')
+    .evaluateAll(async function (ps) {
+      const out = [];
+      for (const p of ps) {
+        const d = p.getAttribute('d');
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(d));
+        const hex = Array.prototype.map.call(new Uint8Array(buf),
+          b => b.toString(16).padStart(2, '0')).join('');
+        const b = p.getBBox();
+        out.push({ len: d.length, sha: hex,
+                   box: [+b.x.toFixed(3), +b.y.toFixed(3), +b.width.toFixed(3), +b.height.toFixed(3)] });
+      }
+      return out;
+    });
+  /* 官方值：圆点 207 / 星形 2370 字符，sha256 下面两串。
+     抄自 fe-static.deepseek.com 的 main.<hash>.js（icon 模块 47843，oe.di）。 */
+  check('思考图标是「圆点 + 四角星」两条路径，长度与官网一致（207 / 2370）',
+    thinkPaths.length === 2 && thinkPaths[0].len === 207 && thinkPaths[1].len === 2370,
+    JSON.stringify(thinkPaths.map(p => p.len)));
+  check('两条路径与官网逐字节一致（sha256；折行吃掉分隔空格会立刻不等）',
+    thinkPaths[0].sha === 'af8ef4ebf2d05ffc6bc343d42fe631ca0df50274757ed374b0a560469e49e140' &&
+    thinkPaths[1].sha === 'a417d1e26a7aa39ebf2713f80bd55a9d4c42a1d71a9116d3c67195de71646528',
+    JSON.stringify(thinkPaths.map(p => p.sha.slice(0, 16))));
+  check('星形渲染成 14.244 的正方形且与圆点同心居中（官网 16×16 viewBox）',
+    Math.abs(thinkPaths[1].box[2] - 14.244) < 0.02 && Math.abs(thinkPaths[1].box[3] - 14.244) < 0.02 &&
+    Math.abs(thinkPaths[1].box[0] - thinkPaths[1].box[1]) < 0.01 &&
+    Math.abs(thinkPaths[0].box[2] - 2.71) < 0.02,
+    JSON.stringify(thinkPaths.map(p => p.box)));
+
   /* 官网正文左侧那两个是 div，不是 SVG：5px 圆点 + 1px 竖线。
      圆点容器 16×16 居中盒绝对定位在 (0, 9)，所以圆点自身落在 (5.5, 14.5)。 */
   check('正文左侧 5px 圆点 + 1px 竖线（官网 .a510c7ce / ._9ecc93a）',
