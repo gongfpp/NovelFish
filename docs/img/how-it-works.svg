@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9aa3b2"/>
+    </marker>
+    <style>
+      .card { fill: #ffffff; stroke: #e3e6ea; stroke-width: 1.5; }
+      .t    { fill: #1f2328; font-size: 15px; font-weight: 600; }
+      .m    { fill: #3d434d; font-size: 14px; }
+      .s    { fill: #8b929e; font-size: 12.5px; }
+      .line { stroke: #9aa3b2; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <!-- 输入 -->
+  <rect class="card" x="292" y="18" width="296" height="54" rx="16"/>
+  <circle cx="318" cy="45" r="4.5" fill="#4d6bfe"/>
+  <text class="m" x="334" y="50">你敲一句话，比如「继续读下一章」</text>
+
+  <path class="line" d="M440 72 L440 106" marker-end="url(#ar)"/>
+
+  <!-- 判断 -->
+  <path d="M440 112 L648 168 L440 224 L232 168 Z" fill="#f4f6fb" stroke="#d5dced" stroke-width="1.5"/>
+  <text class="t" x="440" y="162" text-anchor="middle">这句话里有触发词吗？</text>
+  <text class="s" x="440" y="184" text-anchor="middle">继续 / 下一章 / 接着读</text>
+
+  <!-- 左分支 -->
+  <path class="line" d="M232 168 L168 168 L168 246" marker-end="url(#ar)"/>
+  <text class="s" x="203" y="158" text-anchor="middle" fill="#3f8f5f">有</text>
+
+  <!-- 右分支 -->
+  <path class="line" d="M648 168 L712 168 L712 246" marker-end="url(#ar)"/>
+  <text class="s" x="678" y="158" text-anchor="middle" fill="#b0703a">没有</text>
+
+  <!-- 左卡：走剧本 -->
+  <rect class="card" x="30" y="250" width="276" height="128" rx="16"/>
+  <circle cx="52" cy="276" r="4.5" fill="#4d6bfe"/>
+  <text class="s" x="66" y="281">「深度思考」里</text>
+  <text class="t" x="52" y="312">第一章 灯塔的第九次熄灭</text>
+  <text class="m" x="52" y="334">看着像在推理</text>
+  <text class="m" x="52" y="358">其实是在读小说</text>
+
+  <!-- 右卡：走模型 -->
+  <rect class="card" x="574" y="250" width="276" height="128" rx="16"/>
+  <circle cx="596" cy="276" r="4.5" fill="#9aa3b2"/>
+  <text class="s" x="610" y="281">「深度思考」里</text>
+  <text class="t" x="596" y="312">模型自己的推理过程</text>
+  <text class="m" x="596" y="334">回答也是模型的回答</text>
+  <text class="s" x="596" y="358">（需要先在设置里配好模型服务）</text>
+</svg>
