@@ -592,3 +592,5 @@ kbd {
   font-weight: 600;
   box-shadow: var(--shadow-2);
 }
+
+.site-visitor-count { flex: 0 0 auto; color: #888; font-size: 11px; line-height: 1.5; text-align: center; padding: 3px 12px; background: #fff; }

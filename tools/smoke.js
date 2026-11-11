@@ -1365,7 +1365,7 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
     };
     const frame = document.querySelector('.chrome');
     return {
-      frame: box('.chrome'), viewport: box('#skinRoot'),
+      frame: box('.chrome'), viewport: box('#skinRoot'), footer: box('.site-visitor-count'),
       tabbar: getComputedStyle(document.querySelector('.chrome-tabbar')).display,
       toolbar: getComputedStyle(document.querySelector('.chrome-toolbar')).display,
       radius: getComputedStyle(frame).borderRadius,
@@ -1382,8 +1382,8 @@ const BIG_TXT = path.join(os.tmpdir(), 'nf-big-' + process.pid + '.txt');
   check('bare 下标签栏与工具栏彻底不占位',
     bare.tabbar === 'none' && bare.toolbar === 'none',
     bare.tabbar + ' / ' + bare.toolbar);
-  check('bare 下网站内容正好占满视口（DeepSeek 页与视口 1:1）',
-    bare.viewport[2] === bare.vw && bare.viewport[3] === bare.vh,
+  check('bare 下内容与访客脚注完整占满视口且不重叠',
+    bare.viewport[2] === bare.vw && Math.abs(bare.viewport[3] + bare.footer[3] - bare.vh) <= 1 && Math.abs(bare.footer[1] - bare.viewport[3]) <= 1,
     bare.viewport.join(',') + ' 视口=' + bare.vw + '×' + bare.vh);
   await shot('16b-bare');
 
